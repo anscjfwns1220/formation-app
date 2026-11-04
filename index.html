@@ -590,7 +590,24 @@ async function ocrWorkerGet(onProg){
   return ocrWorker;
 }
 // 인식된 글자에서 이름 후보만 고르기: 명단에 있는 이름은 모두, 새 이름은 한글 2~4자만
+// 카톡 다크 모드 캡처는 글자가 밝고 배경이 어두워 인식이 떨어짐 → 흑백으로 바꾸고 어두우면 반전
+async function prepImage(file){
+  try{
+    const bmp=await createImageBitmap(file);
+    const scale=bmp.width<900?2:1, c=document.createElement("canvas");
+    c.width=bmp.width*scale; c.height=bmp.height*scale;
+    const g=c.getContext("2d"); g.drawImage(bmp,0,0,c.width,c.height);
+    const img=g.getImageData(0,0,c.width,c.height), d=img.data; let sum=0;
+    for(let i=0;i<d.length;i+=4){const y=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];d[i]=d[i+1]=d[i+2]=y;sum+=y}
+    if(sum/(d.length/4)<128) for(let i=0;i<d.length;i+=4){d[i]=d[i+1]=d[i+2]=255-d[i]}
+    g.putImageData(img,0,0);
+    return await new Promise(ok=>c.toBlob(b=>ok(b||file),"image/png"));
+  }catch(e){return file}
+}
 function namesFromOcr(text){
+  // "이름/나이/역할" 형식(카톡 프로필 이름)이면 앞의 이름만 쓴다
+  const tagged=[...text.matchAll(/([가-힣]{2,4})\s*\/\s*\d{2}/g)].map(m=>m[1]);
+  if(tagged.length>=2) return tagged;
   const out=[];
   splitNames(text).forEach(tok=>{
     if(/[(（]/.test(tok)){out.push(tok);return}
@@ -606,7 +623,7 @@ async function ocrFiles(files){
       const w=await ocrWorkerGet(m=>{$("shotInfo").innerHTML=`<span class="spin"></span>인식 준비 중… ${Math.round(m.progress*100)}%`});
       let text="";
       for(let i=0;i<files.length;i++){$("shotInfo").innerHTML=`<span class="spin"></span>캡처 읽는 중… ${i+1}/${files.length}`;
-        text+="\n"+(await w.recognize(files[i])).data.text}
+        text+="\n"+(await w.recognize(await prepImage(files[i]))).data.text}
       const list=matchNames(namesFromOcr(text));
       $("shotInfo").textContent=list.length?`${list.length}명 인식`:"";
       showReview(list);
@@ -633,7 +650,7 @@ function setupLocalOcr(){
 이번 경기에 "참석"하는 사람의 이름만 뽑아 주세요.
 - 투표 화면이면 참석/가능/O 같은 선택지에 표시된 사람만, 불참/미정 쪽은 빼세요.
 - 채팅이면 참석 의사를 밝힌 사람을 넣으세요. 번호 매긴 명단(1. 김민수 …)이면 그대로 쓰세요.
-- 프로필 이름 뒤의 부가 정보(나이, 지역, 이모지 등)는 지우고 이름만 쓰세요.
+- 프로필 이름 뒤의 부가 정보(나이, 지역, 이모지 등)는 지우고 이름만 쓰세요. "김창희/32/코치"처럼 / 로 이어진 경우 맨 앞이 이름이에요.
 - 참고용 팀 주축 명단: ${roster||"없음"}. 이 명단과 같은 사람이면 명단의 표기로 맞춰 주세요.
 JSON만 답하세요: {"names":["이름1","이름2"]}`;
     try{
