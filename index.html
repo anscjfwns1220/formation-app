@@ -84,6 +84,8 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
 .saved button{font:inherit;font-size:12.5px;background:none;border:0;color:var(--muted);cursor:pointer;padding:2px 4px}
 .saved button.load{color:var(--fg);font-weight:700}
 .empty{color:var(--muted);font-size:13px;margin:0}
+.share-in{grid-column:1/-1;border-color:var(--accent)}
+#shareOut{grid-column:1/-1}
 .toast{font-size:12.5px;color:var(--muted);min-height:1.2em;margin:0}
 
 .player.empty .shirt{background:rgba(255,255,255,.12)!important;border:2px dashed rgba(255,255,255,.8);color:#fff}
@@ -140,7 +142,19 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
     <h1>포메이션 보드</h1>
     <span class="badge" id="fmBadge">4-1-4-1</span>
     <p>이번 주 참석자를 체크하면 자동으로 자리에 들어가요. 남는 인원은 벤치로 가요.</p>
+    <button class="btn" id="shareBtn" style="margin-left:auto">팀원에게 공유</button>
   </header>
+  <section class="sec share-in" id="shareIn" hidden>
+    <h2>공유받은 라인업</h2>
+    <p class="status" id="shareInText"></p>
+    <div class="row"><button class="btn" id="shareTake">내 앱으로 가져오기</button><button class="btn ghost" id="shareSkip">닫기</button></div>
+    <p class="empty">가져오면 지금 내 휴대폰의 명단과 라인업이 공유받은 것으로 바뀌어요.</p>
+  </section>
+  <section class="sec" id="shareOut" hidden>
+    <h2>공유 링크</h2>
+    <p class="empty">이 링크를 카톡으로 보내면, 받은 사람이 눌러서 같은 명단과 1~4쿼터 라인업을 볼 수 있어요. 링크에는 이름이 들어가니 팀 방에만 보내세요.</p>
+    <div class="row"><input type="text" id="shareUrl" class="grow" readonly aria-label="공유 링크"><button class="btn" id="shareCopy">복사</button></div>
+  </section>
 
   <div class="pitch-box">
     <div class="qbar" role="tablist" aria-label="쿼터" id="qbar"></div>
@@ -528,10 +542,10 @@ document.addEventListener("pointerdown",e=>{if(sel>=0&&!e.target.closest(".playe
 const norm=t=>(t||"").replace(/\(.*?\)|\[.*?\]/g,"").replace(/[^가-힣a-zA-Z0-9]/g,"").toLowerCase();
 let pending=[];
 // "홍길동(센터백,톱) 김철수(윙백,수미)" 같은 카톡 명단을 이름+포지션으로 나누기
-const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/센터백|센백|cb/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|스트라이커|공격수|st|fw/i,"ST"],[/윙|lm|rm|lw|rw/i,"W"]];
+const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/센터백|센백|cb/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|스트라이커|공격수|st|fw/i,"ST"],[/윙|lm|rm|lw|rw|^w$/i,"W"]];
 function koPos(t){t=(t||"").trim();for(const [re,c] of KO_POS)if(re.test(t))return c;return ""}
 // 이름 바로 뒤 영문 포지션: "문철준CB", "강대연ST,CDM", "김건휘 FW"
-const ENTRY_RE=/^([가-힣]{2,4})\s*([A-Za-z]{2,3}(?:\s*;\s*[A-Za-z]{2,3})*)?$/;
+const ENTRY_RE=/^([가-힣]{2,4})\s*([A-Za-z]{1,3}(?:\s*;\s*[A-Za-z]{1,3})*)?$/;
 function splitNames(text){
   const prot=String(text||"")
     .replace(/\(([^)]*)\)/g,m=>m.replace(/[,，\/]/g,";"))
@@ -741,6 +755,54 @@ $("qGk").onchange=e=>{
 $("rotateBtn").onclick=()=>{rotate();sel=-1;renderAll();
   const c=attending().map(p=>playedQ(p.id)); $("qInfo").textContent=`4쿼터 배정 완료 · 1인당 ${Math.min(...c)}~${Math.max(...c)}쿼터`};
 $("copyPrev").onclick=()=>{syncQ();const prev=state.qs[state.q-1];state.fm=prev.fm;state.slots=JSON.parse(JSON.stringify(prev.slots));sel=-1;renderAll();flash(`${state.q}쿼터 라인업을 복사했어요`)};
+
+// ---- 팀원과 공유: 명단+라인업을 링크(#L=...)에 압축해서 담기. 서버 없이 카톡으로 전달 ----
+const SHARE_BASE="https://anscjfwns1220.github.io/formation-app/";
+const b64u={enc:u8=>{let s="";u8.forEach(b=>s+=String.fromCharCode(b));return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"")},
+  dec:t=>{t=t.replace(/-/g,"+").replace(/_/g,"/");const s=atob(t);return Uint8Array.from(s,c=>c.charCodeAt(0))}};
+async function pack(obj){
+  const raw=new TextEncoder().encode(JSON.stringify(obj));
+  if(window.CompressionStream){const z=await new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream("deflate-raw"))).arrayBuffer();return "z"+b64u.enc(new Uint8Array(z))}
+  return "j"+b64u.enc(raw);
+}
+async function unpack(t){
+  const bytes=b64u.dec(t.slice(1));
+  const raw=t[0]==="z"?new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer()):bytes;
+  return JSON.parse(new TextDecoder().decode(raw));
+}
+function shareData(){
+  syncQ(); const idx=new Map(state.players.map((p,i)=>[p.id,i]));
+  return {v:1,t:state.team,k:state.kit,
+    p:state.players.map(p=>[p.name,p.num,p.pos1||"",p.pos2||"",p.type==="guest"?1:0,p.here?1:0]),
+    q:state.qs.map(q=>({f:q.fm,g:q.gk&&idx.has(q.gk)?idx.get(q.gk):-1,s:q.slots.map(sl=>[sl.pid&&idx.has(sl.pid)?idx.get(sl.pid):-1,Math.round(sl.x),Math.round(sl.y)])}))};
+}
+function fromShare(d){
+  const players=d.p.map(([name,num,pos1,pos2,g,h])=>({id:nid(),name,num,pos1,pos2,type:g?"guest":"core",here:!!h}));
+  const qs=d.q.map(q=>({fm:F[q.f]?q.f:"4-1-4-1",gk:q.g>=0?players[q.g]?.id||null:null,
+    slots:fresh(F[q.f]?q.f:"4-1-4-1").map((sl,i)=>{const r=q.s[i]||[-1];return {...sl,pid:r[0]>=0?players[r[0]]?.id||null:null,x:r[1]??sl.x,y:r[2]??sl.y}})}));
+  return {team:d.t||"우리 팀",kit:d.k||0,players,q:0,qs,fm:qs[0].fm,slots:qs[0].slots,rules3:true};
+}
+$("shareBtn").onclick=async()=>{
+  const url=SHARE_BASE+"#L="+await pack(shareData());
+  $("shareOut").hidden=false; $("shareUrl").value=url;
+  const text=`${state.team||"우리 팀"} 이번 주 라인업이에요. 눌러서 확인하세요.`;
+  if(navigator.share){try{await navigator.share({title:"포메이션 보드",text,url});return}catch(e){}}
+  $("shareUrl").scrollIntoView({block:"center"}); $("shareUrl").select();
+};
+$("shareCopy").onclick=async()=>{const el=$("shareUrl");
+  try{await navigator.clipboard.writeText(el.value);flash("링크를 복사했어요. 카톡에 붙여넣으세요")}catch(e){el.select();flash("링크를 길게 눌러 복사하세요")}};
+let incoming=null;
+(async()=>{
+  const m=location.hash.match(/[#&]L=([A-Za-z0-9_-]+)/); if(!m) return;
+  try{const d=await unpack(m[1]); incoming=fromShare(d);
+    const here=incoming.players.filter(p=>p.here).length;
+    $("shareInText").textContent=`${incoming.team} · 명단 ${incoming.players.length}명(참석 ${here}명) · 1~4쿼터 라인업`;
+    $("shareIn").hidden=false;
+  }catch(e){flash("공유 링크를 읽지 못했어요")}
+})();
+$("shareTake").onclick=()=>{if(!incoming)return; state=incoming; incoming=null; sel=-1; $("shareIn").hidden=true;
+  try{history.replaceState(null,"",location.pathname+location.search)}catch(e){} renderAll(); flash("공유받은 라인업을 가져왔어요")};
+$("shareSkip").onclick=()=>{$("shareIn").hidden=true; incoming=null; try{history.replaceState(null,"",location.pathname+location.search)}catch(e){}};
 
 load(); renderAll();
 </script>
