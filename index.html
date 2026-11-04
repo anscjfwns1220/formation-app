@@ -179,7 +179,7 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
         <button class="btn" id="shotBtn">캡처 올리기</button>
         <span class="count" id="shotInfo"></span>
       </div>
-      <p class="empty" id="shotOff" hidden>캡처 인식을 쓸 수 없는 환경이에요. 아래에 이름을 붙여넣어 주세요.</p>
+      <p class="empty" id="shotOff" hidden></p>
       <details id="pasteBox">
         <summary class="empty" style="cursor:pointer">이름을 직접 붙여넣기</summary>
         <div class="row" style="margin-top:8px">
@@ -600,10 +600,7 @@ function namesFromOcr(text){
     const known=state.players.some(p=>{const q=norm(p.name);return q&&(q===k||(q.length>=2&&k.includes(q)))});
     return known||/^[가-힣]{2,4}$/.test(name.trim())});
 }
-function setupLocalOcr(){
-  $("shotBtn").onclick=()=>$("shotFile").click();
-  $("shotFile").onchange=async()=>{
-    const files=[...$("shotFile").files].slice(0,4); if(!files.length)return;
+async function ocrFiles(files){
     $("shotBtn").disabled=true; $("shotInfo").innerHTML='<span class="spin"></span>인식 준비 중… (처음 한 번은 조금 걸려요)';
     try{
       const w=await ocrWorkerGet(m=>{$("shotInfo").innerHTML=`<span class="spin"></span>인식 준비 중… ${Math.round(m.progress*100)}%`});
@@ -615,14 +612,18 @@ function setupLocalOcr(){
       showReview(list);
     }catch(e){ $("shotInfo").textContent="캡처를 읽지 못했어요. 인터넷 연결을 확인하거나 이름을 직접 붙여넣어 주세요"; }
     finally{$("shotBtn").disabled=false;$("shotFile").value=""}
-  };
+}
+function setupLocalOcr(){
+  $("shotBtn").onclick=()=>$("shotFile").click();
+  $("shotFile").onchange=()=>{const files=[...$("shotFile").files].slice(0,4); if(files.length) ocrFiles(files)};
 }
 (async()=>{
   let sample=null;
   if(window.LOCAL_OCR){setupLocalOcr();return}
   try{sample=await window.claude?.use?.("sample")}catch(e){}
   const caps=sample?await sample.limits().catch(()=>null):null;
-  if(!sample||!caps?.images){$("shotRow").hidden=true;$("shotOff").hidden=false;$("pasteBox").open=true;return}
+  // Claude 인식을 못 쓰는 곳(브라우저 등)에서는 기기 안 인식으로
+  if(!sample||!caps?.images){setupLocalOcr();return}
   $("shotBtn").onclick=()=>$("shotFile").click();
   $("shotFile").onchange=async()=>{
     const files=[...$("shotFile").files].slice(0,caps.images.maxCount||4); if(!files.length)return;
@@ -641,6 +642,7 @@ JSON만 답하세요: {"names":["이름1","이름2"]}`;
       $("shotInfo").textContent=names.length?`${names.length}명 인식`:"";
       showReview(matchNames(names));
     }catch(e){
+      if(["not_granted","images_unavailable","unavailable"].includes(e?.code)){$("shotBtn").disabled=false;return await ocrFiles(files)}
       $("shotInfo").textContent={not_granted:"Claude 사용을 허용해야 캡처를 읽을 수 있어요",rate_limited:"요청이 많아요. 잠시 뒤 다시 올려주세요",image_rejected:"이미지 형식이나 개수를 확인해 주세요",cancelled:""}[e?.code]??"캡처를 읽지 못했어요. 이름을 직접 붙여넣어 주세요";
     }finally{$("shotBtn").disabled=false;$("shotFile").value=""}
   };
