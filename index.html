@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-title" content="포메이션">
 <link rel="apple-touch-icon" href="icon-180.png">
 <link rel="icon" href="icon-192.png">
+<script>window.LOCAL_OCR=true</script>
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px;font-family:system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 </head><body>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -178,7 +179,7 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
         <button class="btn" id="shotBtn">캡처 올리기</button>
         <span class="count" id="shotInfo"></span>
       </div>
-      <p class="empty" id="shotOff" hidden>캡처 인식은 Claude 앱이나 claude.ai에서 열었을 때만 돼요. 아래에 이름을 붙여넣어도 돼요.</p>
+      <p class="empty" id="shotOff" hidden>캡처 인식을 쓸 수 없는 환경이에요. 아래에 이름을 붙여넣어 주세요.</p>
       <details id="pasteBox">
         <summary class="empty" style="cursor:pointer">이름을 직접 붙여넣기</summary>
         <div class="row" style="margin-top:8px">
@@ -578,8 +579,47 @@ $("applyImport").onclick=()=>{
 $("cancelImport").onclick=()=>{pending=[];$("review").hidden=true;$("shotInfo").textContent=""};
 $("pasteBtn").onclick=()=>showReview(matchNames(splitNames($("pasteText").value)));
 
+// 휴대폰 앱(설치형) 버전: 기기 안에서 글자 인식(Tesseract, ocr/ 폴더). 인터넷으로 보내지 않음
+function loadScript(src){return new Promise((ok,no)=>{const sc=document.createElement("script");sc.src=src;sc.onload=ok;sc.onerror=no;document.head.append(sc)})}
+let ocrWorker=null;
+async function ocrWorkerGet(onProg){
+  if(ocrWorker) return ocrWorker;
+  if(!window.Tesseract) await loadScript("ocr/tesseract.min.js");
+  ocrWorker=await Tesseract.createWorker(["kor","eng"],1,{workerPath:"ocr/worker.min.js",corePath:"ocr/",langPath:"ocr/lang",
+    logger:m=>{if(m.status&&typeof m.progress==="number")onProg?.(m)}});
+  return ocrWorker;
+}
+// 인식된 글자에서 이름 후보만 고르기: 명단에 있는 이름은 모두, 새 이름은 한글 2~4자만
+function namesFromOcr(text){
+  const out=[];
+  splitNames(text).forEach(tok=>{
+    if(/[(（]/.test(tok)){out.push(tok);return}
+    tok.split(/\s+/).forEach(w=>{const c=w.replace(/[^가-힣a-zA-Z]/g,"");if(c)out.push(c)});
+  });
+  return out.filter(t=>{const {name}=parseEntry(t);const k=norm(name);
+    const known=state.players.some(p=>{const q=norm(p.name);return q&&(q===k||(q.length>=2&&k.includes(q)))});
+    return known||/^[가-힣]{2,4}$/.test(name.trim())});
+}
+function setupLocalOcr(){
+  $("shotBtn").onclick=()=>$("shotFile").click();
+  $("shotFile").onchange=async()=>{
+    const files=[...$("shotFile").files].slice(0,4); if(!files.length)return;
+    $("shotBtn").disabled=true; $("shotInfo").innerHTML='<span class="spin"></span>인식 준비 중… (처음 한 번은 조금 걸려요)';
+    try{
+      const w=await ocrWorkerGet(m=>{$("shotInfo").innerHTML=`<span class="spin"></span>인식 준비 중… ${Math.round(m.progress*100)}%`});
+      let text="";
+      for(let i=0;i<files.length;i++){$("shotInfo").innerHTML=`<span class="spin"></span>캡처 읽는 중… ${i+1}/${files.length}`;
+        text+="\n"+(await w.recognize(files[i])).data.text}
+      const list=matchNames(namesFromOcr(text));
+      $("shotInfo").textContent=list.length?`${list.length}명 인식`:"";
+      showReview(list);
+    }catch(e){ $("shotInfo").textContent="캡처를 읽지 못했어요. 인터넷 연결을 확인하거나 이름을 직접 붙여넣어 주세요"; }
+    finally{$("shotBtn").disabled=false;$("shotFile").value=""}
+  };
+}
 (async()=>{
   let sample=null;
+  if(window.LOCAL_OCR){setupLocalOcr();return}
   try{sample=await window.claude?.use?.("sample")}catch(e){}
   const caps=sample?await sample.limits().catch(()=>null):null;
   if(!sample||!caps?.images){$("shotRow").hidden=true;$("shotOff").hidden=false;$("pasteBox").open=true;return}
