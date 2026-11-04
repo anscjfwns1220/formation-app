@@ -530,11 +530,23 @@ let pending=[];
 // "홍길동(센터백,톱) 김철수(윙백,수미)" 같은 카톡 명단을 이름+포지션으로 나누기
 const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/센터백|센백|cb/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|스트라이커|공격수|st|fw/i,"ST"],[/윙|lm|rm|lw|rw/i,"W"]];
 function koPos(t){t=(t||"").trim();for(const [re,c] of KO_POS)if(re.test(t))return c;return ""}
+// 이름 바로 뒤 영문 포지션: "문철준CB", "강대연ST,CDM", "김건휘 FW"
+const ENTRY_RE=/^([가-힣]{2,4})\s*([A-Za-z]{2,3}(?:\s*;\s*[A-Za-z]{2,3})*)?$/;
 function splitNames(text){
-  const prot=String(text||"").replace(/\(([^)]*)\)/g,m=>m.replace(/[,，\/]/g,";"));
-  return prot.split(/[\n,，、·\/]+|(?<=\))\s+/).map(t=>t.trim()).filter(t=>t&&!/^[0-9]/.test(t));
+  const prot=String(text||"")
+    .replace(/\(([^)]*)\)/g,m=>m.replace(/[,，\/]/g,";"))
+    .replace(/([A-Za-z]{2,3})\s*[,，\/]\s*(?=[A-Za-z]{2,3}\b)/g,"$1;");
+  const out=[];
+  prot.split(/[\n,，、·\/]+|(?<=\))\s+/).map(t=>t.trim()).filter(t=>t&&!/^[0-9]/.test(t)).forEach(t=>{
+    // 한 줄에 "이름포지션 이름포지션"이 공백으로 이어져 있으면 나누기
+    const parts=t.replace(/([가-힣]{2,4})\s+([A-Za-z]{2,3})\b/g,"$1$2").split(/\s+/);
+    if(!/[(（]/.test(t)&&parts.length>1&&parts.every(p=>ENTRY_RE.test(p))) out.push(...parts); else out.push(t);
+  });
+  return out;
 }
 function parseEntry(raw){
+  const e=String(raw).trim().match(ENTRY_RE);
+  if(e) return {name:e[1],pos:(e[2]||"").split(/\s*;\s*/).map(koPos).filter(Boolean)};
   const m=String(raw).match(/^([^(（]+)[(（]([^)）]*)[)）]/);
   if(!m) return {name:String(raw).trim(),pos:[]};
   return {name:m[1].trim(),pos:m[2].split(/[;,]/).map(koPos).filter(Boolean)};
@@ -577,7 +589,8 @@ $("applyImport").onclick=()=>{
   flash(`참석 ${attending().length}명 반영${added?`, 새로 ${added}명 추가`:""}`);
 };
 $("cancelImport").onclick=()=>{pending=[];$("review").hidden=true;$("shotInfo").textContent=""};
-$("pasteBtn").onclick=()=>showReview(matchNames(splitNames($("pasteText").value)));
+$("pasteBtn").onclick=()=>{const t=$("pasteText").value, tagged=[...t.matchAll(/([가-힣]{2,4})\s*\/\s*\d{2}/g)].map(m=>m[1]);
+  showReview(matchNames(tagged.length>=2?tagged:splitNames(t)))};
 
 // 휴대폰 앱(설치형) 버전: 기기 안에서 글자 인식(Tesseract, ocr/ 폴더). 인터넷으로 보내지 않음
 function loadScript(src){return new Promise((ok,no)=>{const sc=document.createElement("script");sc.src=src;sc.onload=ok;sc.onerror=no;document.head.append(sc)})}
@@ -588,6 +601,27 @@ async function ocrWorkerGet(onProg){
   ocrWorker=await Tesseract.createWorker(["kor","eng"],1,{workerPath:"ocr/worker.min.js",corePath:"ocr/",langPath:"ocr/lang",
     logger:m=>{if(m.status&&typeof m.progress==="number")onProg?.(m)}});
   return ocrWorker;
+}
+// 영문 포지션(CB, ST 등)은 한국어 인식에서 깨지므로 영어 전용으로 한 번 더 읽어 줄 단위로 붙인다
+let ocrEng=null;
+async function ocrEngGet(){
+  if(!ocrEng) ocrEng=await Tesseract.createWorker(["eng"],1,{workerPath:"ocr/worker.min.js",corePath:"ocr/",langPath:"ocr/lang"});
+  return ocrEng;
+}
+const CODE="(?:CDM|CAM|LWB|RWB|GK|CB|LB|RB|CM|LM|RM|ST|FW|LW|RW|DF|MF|DM|AM)";
+const CODE_GROUP=new RegExp(CODE+"(?:\\s*[,/]\\s*"+CODE+")*","g");
+const linesOf=d=>(d.blocks||[]).flatMap(b=>b.paragraphs.flatMap(p=>p.lines));
+function mergePositions(kor,eng){
+  const el=linesOf(eng);
+  return linesOf(kor).map(l=>{
+    const t=l.text.trim(); if(/[(（]/.test(t)) return t;
+    const names=t.match(/[가-힣]{2,4}/g)||[]; if(!names.length) return t;
+    let best=null,ov=0;
+    el.forEach(e=>{const o=Math.min(l.bbox.y1,e.bbox.y1)-Math.max(l.bbox.y0,e.bbox.y0);if(o>ov){ov=o;best=e}});
+    const codes=best?(best.text.toUpperCase().match(CODE_GROUP)||[]):[];
+    if(!codes.length||codes.length!==names.length) return t;
+    return names.map((n,i)=>`${n}(${codes[i].replace(/\s*[,/]\s*/g,";")})`).join("\n");
+  }).join("\n");
 }
 // 인식된 글자에서 이름 후보만 고르기: 명단에 있는 이름은 모두, 새 이름은 한글 2~4자만
 // 카톡 다크 모드 캡처는 글자가 밝고 배경이 어두워 인식이 떨어짐 → 흑백으로 바꾸고 어두우면 반전
@@ -611,7 +645,7 @@ function namesFromOcr(text){
   const out=[];
   splitNames(text).forEach(tok=>{
     if(/[(（]/.test(tok)){out.push(tok);return}
-    tok.split(/\s+/).forEach(w=>{const c=w.replace(/[^가-힣a-zA-Z]/g,"");if(c)out.push(c)});
+    tok.split(/\s+/).forEach(w=>{const c=w.replace(/[^가-힣a-zA-Z;]/g,"");if(c)out.push(c)});
   });
   return out.filter(t=>{const {name}=parseEntry(t);const k=norm(name);
     const known=state.players.some(p=>{const q=norm(p.name);return q&&(q===k||(q.length>=2&&k.includes(q)))});
@@ -623,7 +657,11 @@ async function ocrFiles(files){
       const w=await ocrWorkerGet(m=>{$("shotInfo").innerHTML=`<span class="spin"></span>인식 준비 중… ${Math.round(m.progress*100)}%`});
       let text="";
       for(let i=0;i<files.length;i++){$("shotInfo").innerHTML=`<span class="spin"></span>캡처 읽는 중… ${i+1}/${files.length}`;
-        text+="\n"+(await w.recognize(await prepImage(files[i]))).data.text}
+        const img=await prepImage(files[i]);
+        const kor=(await w.recognize(img,{},{blocks:true,text:true})).data;
+        let merged=kor.text;
+        try{ const eng=(await (await ocrEngGet()).recognize(img,{},{blocks:true})).data; merged=mergePositions(kor,eng) }catch(e){}
+        text+="\n"+merged}
       const list=matchNames(namesFromOcr(text));
       $("shotInfo").textContent=list.length?`${list.length}명 인식`:"";
       showReview(list);
@@ -652,7 +690,8 @@ function setupLocalOcr(){
 - 채팅이면 참석 의사를 밝힌 사람을 넣으세요. 번호 매긴 명단(1. 김민수 …)이면 그대로 쓰세요.
 - 프로필 이름 뒤의 부가 정보(나이, 지역, 이모지 등)는 지우고 이름만 쓰세요. "김창희/32/코치"처럼 / 로 이어진 경우 맨 앞이 이름이에요.
 - 참고용 팀 주축 명단: ${roster||"없음"}. 이 명단과 같은 사람이면 명단의 표기로 맞춰 주세요.
-JSON만 답하세요: {"names":["이름1","이름2"]}`;
+- 이름 옆에 포지션이 적혀 있으면(예: 문철준CB, 강대연ST,CDM) "문철준(CB)", "강대연(ST,CDM)"처럼 괄호에 넣어 주세요.
+JSON만 답하세요: {"names":["이름1","이름2(포지션)"]}`;
     try{
       const r=await sample.json(prompt,{images:files,cache:false});
       const names=Array.isArray(r?.names)?r.names:[];
