@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>포메이션 보드</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f8a4a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="포메이션">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font-size:14px;font-family:system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head><body>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: 세로 피치가 주인공, 옆(좁은 화면에선 아래)에 컨트롤 패널 */
+:root{
+  --bg:#eef2ee; --surface:#ffffff; --fg:#14201a; --muted:#5b6b62; --line:#d5ded8;
+  --grass-a:#2f8a4a; --grass-b:#2a7d43; --chalk:rgba(255,255,255,.85);
+  --accent:#e2342b; --accent-fg:#ffffff; --away:#1d4ed8;
+  --f-display:"Black Han Sans","Noto Sans KR",system-ui,sans-serif;
+  --f-body:"Noto Sans KR",system-ui,-apple-system,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1411; --surface:#17201b; --fg:#e6efe9; --muted:#93a59a; --line:#2a3630;
+  --grass-a:#246b3a; --grass-b:#205f34; --chalk:rgba(255,255,255,.75); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1411; --surface:#17201b; --fg:#e6efe9; --muted:#93a59a; --line:#2a3630;
+  --grass-a:#246b3a; --grass-b:#205f34; --chalk:rgba(255,255,255,.75); color-scheme:dark}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px}
+.wrap{max-width:1040px;margin:0 auto;display:grid;gap:20px;grid-template-columns:minmax(0,1fr) 340px;align-items:start}
+@media (max-width:820px){.wrap{grid-template-columns:minmax(0,1fr)}}
+header{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px}
+h1{font-family:var(--f-display);font-weight:400;font-size:clamp(26px,5vw,34px);margin:0;letter-spacing:.01em}
+header p{margin:0;color:var(--muted);font-size:13px}
+.badge{font-family:var(--f-mono);font-size:12px;letter-spacing:.06em;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+
+/* Pitch: 105m x 68m, 세로 */
+.pitch-box{width:100%;max-width:520px;margin:0 auto}
+.pitch{position:relative;width:100%;aspect-ratio:68/105;max-width:100%;border-radius:10px;overflow:hidden;
+  background:repeating-linear-gradient(to bottom,var(--grass-a) 0 10%,var(--grass-b) 10% 20%);touch-action:none;user-select:none;-webkit-user-select:none}
+.pitch svg.lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.pitch svg.lines *{stroke:var(--chalk);fill:none;stroke-width:.35}
+.pitch svg.lines .dot{fill:var(--chalk);stroke:none}
+.player{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:2px;cursor:grab;width:68px}
+.player:active{cursor:grabbing}
+.shirt{width:38px;height:38px;border-radius:50%;background:var(--kit,var(--accent));color:var(--kit-fg,#fff);border:2px solid rgba(255,255,255,.9);
+  display:grid;place-items:center;font-family:var(--f-mono);font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.35);transition:transform .12s}
+.player.gk .shirt{background:#f5b700;color:#1a1a1a}
+.player.sel .shirt{outline:3px solid #fff;outline-offset:2px;transform:scale(1.08)}
+.player.drag .shirt{transform:scale(1.15)}
+.pname{font-size:11.5px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);white-space:nowrap;max-width:68px;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.pos{font-family:var(--f-mono);font-size:9.5px;color:rgba(255,255,255,.85);letter-spacing:.05em;line-height:1}
+.hint{text-align:center;color:var(--muted);font-size:12.5px;margin:8px 0 0}
+
+/* Panel */
+.panel{display:flex;flex-direction:column;gap:16px;min-width:0}
+.sec{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.sec h2{margin:0;font-size:12px;font-weight:700;letter-spacing:.08em;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--f-mono);font-size:13px;border:1px solid var(--line);background:transparent;color:var(--fg);border-radius:6px;padding:6px 10px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+label{font-size:12.5px;color:var(--muted)}
+input[type=text],input[type=number]{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0}
+input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grow{flex:1}
+.swatches{display:flex;gap:6px}
+.sw{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0}
+.sw[aria-pressed="true"]{border-color:var(--fg);box-shadow:0 0 0 2px var(--bg) inset}
+.btn{font:inherit;font-weight:700;font-size:14px;border:0;border-radius:6px;padding:8px 12px;cursor:pointer;background:var(--accent);color:var(--accent-fg)}
+.btn.ghost{background:transparent;color:var(--fg);border:1px solid var(--line);font-weight:500}
+.saved{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.saved li{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.saved .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.saved .fm{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.saved button{font:inherit;font-size:12.5px;background:none;border:0;color:var(--muted);cursor:pointer;padding:2px 4px}
+.saved button.load{color:var(--fg);font-weight:700}
+.empty{color:var(--muted);font-size:13px;margin:0}
+.toast{font-size:12.5px;color:var(--muted);min-height:1.2em;margin:0}
+
+.player.empty .shirt{background:rgba(255,255,255,.12)!important;border:2px dashed rgba(255,255,255,.8);color:#fff}
+.player.guest .shirt{border-style:dashed;border-color:#ffe066}
+.gtag{font-size:9px;font-weight:700;color:#1a1a1a;background:#ffe066;border-radius:3px;padding:0 3px;line-height:1.4}
+.roster{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.roster li{display:flex;align-items:center;gap:6px}
+.roster input[type=number]{flex:none;width:36px;text-align:center;-moz-appearance:textfield;padding:5px 6px}
+.roster input[type=text]{flex:1;padding:5px 8px}
+.roster input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);flex:none}
+.roster select{font:inherit;font-size:12px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 0;width:60px;flex:none}
+.roster input[type=text]{min-width:56px}
+.roster .x{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit;font-size:13px;padding:2px 4px}
+.sub{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sub h3{margin:0;font-size:13px;font-weight:700}
+.count{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+.bench{display:flex;flex-wrap:wrap;gap:6px}
+.bp{font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:4px 10px 4px 4px;cursor:pointer}
+.bp b{font-family:var(--f-mono);font-weight:500;font-size:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--kit,var(--accent));color:var(--kit-fg,#fff)}
+.bp.guest b{background:#ffe066;color:#1a1a1a}
+.bench.armed .bp{border-color:var(--accent)}
+.status{font-size:13px;margin:0}
+.status strong{color:var(--accent)}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tab{font:inherit;font-size:13px;font-weight:700;background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);padding:6px 8px;cursor:pointer;margin-bottom:-1px}
+.tab[aria-selected="true"]{color:var(--fg);border-color:var(--accent)}
+
+#importSec textarea{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0;resize:vertical}
+.rv-tag{font-size:11.5px;font-weight:700;border-radius:4px;padding:1px 6px;flex:none}
+.rv-tag.ok{background:color-mix(in srgb,var(--grass-a) 18%,transparent);color:var(--fg)}
+.rv-tag.new{background:#ffe066;color:#1a1a1a}
+.roster select.rv{width:auto}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.qbar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+.qb{font:inherit;font-weight:700;font-size:14px;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:8px 0;cursor:pointer;display:flex;flex-direction:column;align-items:center;line-height:1.2}
+.qb small{font-family:var(--f-mono);font-weight:500;font-size:11px;color:var(--muted)}
+.qb[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.qb[aria-selected="true"] small{color:var(--bg);opacity:.75}
+#qGk{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+#qNames{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;min-width:0;resize:vertical;width:100%;box-sizing:border-box}
+.bp i{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.rhead{display:flex;gap:6px;font-size:11px;color:var(--muted);letter-spacing:.04em;padding:0 2px}
+.rhead span{flex:none}.rhead span.grow{flex:1}.rhead span:nth-child(1){width:24px}.rhead span:nth-child(2){width:36px}.rhead span:nth-child(4),.rhead span:nth-child(5){width:60px}.rhead span:nth-child(6){width:30px;text-align:center}.rhead span:nth-child(7){width:20px}
+.roster input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.roster li{gap:5px}
+.gtoggle{flex:none;width:30px;height:30px;border-radius:6px;border:1.5px dashed var(--line);background:transparent;color:#1a1a1a;font-weight:700;cursor:pointer;padding:0}
+.gtoggle[aria-pressed="true"]{background:#ffe066;border:1.5px solid #e0b800}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}.shirt{transition:none}}
+</style>
+
+<div class="wrap" id="app">
+  <header>
+    <h1>포메이션 보드</h1>
+    <span class="badge" id="fmBadge">4-1-4-1</span>
+    <p>이번 주 참석자를 체크하면 자동으로 자리에 들어가요. 남는 인원은 벤치로 가요.</p>
+  </header>
+
+  <div class="pitch-box">
+    <div class="qbar" role="tablist" aria-label="쿼터" id="qbar"></div>
+    <div class="pitch" id="pitch">
+      <svg class="lines" viewBox="0 0 68 105" preserveAspectRatio="none" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="65" height="102"/>
+        <line x1="1.5" y1="52.5" x2="66.5" y2="52.5"/>
+        <circle cx="34" cy="52.5" r="9.15"/><circle class="dot" cx="34" cy="52.5" r=".6"/>
+        <rect x="13.85" y="1.5" width="40.3" height="16.5"/><rect x="24.85" y="1.5" width="18.3" height="5.5"/>
+        <rect x="13.85" y="87" width="40.3" height="16.5"/><rect x="24.85" y="98" width="18.3" height="5.5"/>
+        <circle class="dot" cx="34" cy="12.5" r=".6"/><circle class="dot" cx="34" cy="92.5" r=".6"/>
+        <path d="M26.7 18 A9.15 9.15 0 0 0 41.3 18"/><path d="M26.7 87 A9.15 9.15 0 0 1 41.3 87"/>
+      </svg>
+    </div>
+    <p class="hint">공격 방향 ↑ · 선수 끌어서 이동 · 탭해서 교체</p>
+    <section class="sec" style="margin-top:12px">
+      <div class="sub"><h3 id="qTitle">1쿼터 이름으로 배정</h3><button class="btn ghost" id="copyPrev" style="padding:4px 10px;font-size:13px">이전 쿼터 복사</button></div>
+      <p class="empty">이 쿼터에 뛸 사람 이름만 넣으면 각자 주 포지션에 배치돼요. 11명이 넘으면 나머지는 벤치로 가요.</p>
+      <div class="row"><label for="qGk">이번 쿼터 GK</label><select id="qGk" class="grow"></select></div>
+      <textarea id="qNames" rows="2" placeholder="김민수, 이준호, 박지훈 …" aria-label="쿼터 출전 선수 이름"></textarea>
+      <div class="row"><button class="btn" id="qAssign">배정</button><button class="btn ghost" id="rotateBtn">4쿼터 자동 로테이션</button><span class="count" id="qInfo"></span></div>
+    </section>
+    <section class="sec" style="margin-top:12px">
+      <div class="sub"><h3>벤치</h3><span class="count" id="benchCount"></span></div>
+      <p class="status" id="slotStatus"></p>
+      <div class="bench" id="bench"></div>
+    </section>
+  </div>
+
+  <div class="panel">
+    <section class="sec" id="importSec">
+      <h2>카톡 참석자 불러오기</h2>
+      <p class="empty">카카오톡 투표 결과나 참석 명단을 캡처해서 올리면 이름을 읽어 참석 체크를 해줘요. 명단에 없는 이름은 용병으로 추가할 수 있어요.</p>
+      <div class="row" id="shotRow">
+        <input type="file" id="shotFile" accept="image/*" multiple hidden>
+        <button class="btn" id="shotBtn">캡처 올리기</button>
+        <span class="count" id="shotInfo"></span>
+      </div>
+      <p class="empty" id="shotOff" hidden>캡처 인식은 Claude 앱이나 claude.ai에서 열었을 때만 돼요. 아래에 이름을 붙여넣어도 돼요.</p>
+      <details id="pasteBox">
+        <summary class="empty" style="cursor:pointer">이름을 직접 붙여넣기</summary>
+        <div class="row" style="margin-top:8px">
+          <textarea id="pasteText" rows="3" class="grow" placeholder="홍길동(센터백,톱) 김철수(윙백,수미) …" aria-label="참석자 이름"></textarea>
+        </div>
+        <div class="row" style="margin-top:6px"><button class="btn ghost" id="pasteBtn">이름 확인</button></div>
+      </details>
+      <div id="review" hidden>
+        <div class="sub"><h3>확인하고 반영하기</h3><span class="count" id="reviewCount"></span></div>
+        <ul class="roster" id="reviewList"></ul>
+        <label class="row" style="color:var(--fg)"><input type="checkbox" id="resetOthers" checked> 목록에 없는 주축은 불참으로 바꾸기</label>
+        <div class="row"><button class="btn" id="applyImport">참석 반영</button><button class="btn ghost" id="cancelImport">취소</button></div>
+      </div>
+    </section>
+
+    <section class="sec">
+      <h2>이번 주 명단</h2>
+      <p class="empty">왼쪽 체크는 이번 주 참석, 오른쪽 <b>용병</b> 칸을 누르면 주축 ↔ 용병이 바로 바뀌어요. 포지션은 주 → 부 순서로 배정돼요.</p>
+      <div class="rhead" aria-hidden="true"><span>참석</span><span>번호</span><span class="grow">이름</span><span>주</span><span>부</span><span>용병</span><span></span></div>
+      <div class="sub"><h3>주축 멤버</h3><span class="count" id="coreCount"></span></div>
+      <ul class="roster" id="coreList"></ul>
+      <div class="sub" style="margin-top:6px"><h3>용병</h3><span class="count" id="guestCount"></span></div>
+      <ul class="roster" id="guestList"></ul>
+      <div class="row">
+        <input type="text" id="guestName" class="grow" placeholder="이름 입력 후 추가" aria-label="새 선수 이름">
+        <button class="btn" id="addGuest">용병 추가</button>
+        <button class="btn ghost" id="addCore">주축 추가</button>
+      </div>
+      <p class="status" id="attendSummary"></p>
+      <div class="row">
+        <button class="btn" id="autoBtn">참석자 자동 배치</button>
+        <button class="btn ghost" id="newWeek">다음 주 새로 시작</button>
+      </div>
+      <p class="toast" id="weekConfirm" hidden>용병 명단을 지우고 참석 체크를 모두 풀까요? <button class="btn ghost" id="weekYes">네, 새로 시작</button> <button class="btn ghost" id="weekNo">취소</button></p>
+    </section>
+
+    <section class="sec">
+      <h2>포메이션</h2>
+      <div class="chips" id="chips"></div>
+    </section>
+
+    <section class="sec">
+      <h2>팀</h2>
+      <div class="row"><input type="text" id="teamName" class="grow" placeholder="팀 이름" aria-label="팀 이름"></div>
+      <div class="row"><label>유니폼 색</label><div class="swatches" id="swatches"></div></div>
+    </section>
+
+    <section class="sec">
+      <h2>저장한 라인업</h2>
+      <div class="row">
+        <input type="text" id="saveName" class="grow" placeholder="예: 10월 3주차" aria-label="저장 이름">
+        <button class="btn" id="saveBtn">저장</button>
+      </div>
+      <p class="toast" id="toast"></p>
+      <ul class="saved" id="savedList"></ul>
+      <div class="row"><button class="btn ghost" id="resetBtn">기본 위치로 되돌리기</button></div>
+    </section>
+  </div>
+</div>
+
+<script>
+// 좌표: x 0~100(왼→오), y 0~100(위=상대 골문, 아래=우리 골문)
+// 배열 순서 = 자리 번호: 수비 왼쪽부터 1번 → 미드 → 공격 순으로 10번, 골키퍼 11번
+const F = {
+  "4-1-4-1":[["LB",15,72],["CB",38,76],["CB",62,76],["RB",85,72],["CDM",50,60],["LM",15,40],["CM",38,44],["CM",62,44],["RM",85,40],["ST",50,18],["GK",50,92]],
+  "4-4-2":[["LB",15,72],["CB",38,76],["CB",62,76],["RB",85,72],["LM",15,48],["CM",38,52],["CM",62,52],["RM",85,48],["ST",38,24],["ST",62,24],["GK",50,92]],
+  "4-3-3":[["LB",15,72],["CB",38,76],["CB",62,76],["RB",85,72],["CM",30,52],["CDM",50,58],["CM",70,52],["LW",18,26],["ST",50,20],["RW",82,26],["GK",50,92]],
+  "4-2-3-1":[["LB",15,72],["CB",38,76],["CB",62,76],["RB",85,72],["CDM",38,58],["CDM",62,58],["LAM",20,38],["CAM",50,40],["RAM",80,38],["ST",50,18],["GK",50,92]],
+  "3-5-2":[["CB",28,76],["CB",50,78],["CB",72,76],["LWB",12,52],["CM",34,54],["CDM",50,60],["CM",66,54],["RWB",88,52],["ST",38,24],["ST",62,24],["GK",50,92]],
+  "5-3-2":[["LWB",10,66],["CB",30,76],["CB",50,78],["CB",70,76],["RWB",90,66],["CM",30,52],["CM",50,56],["CM",70,52],["ST",38,24],["ST",62,24],["GK",50,92]]
+};
+const KITS=[["#e2342b","#fff"],["#1d4ed8","#fff"],["#111827","#fff"],["#f8fafc","#111"],["#7c3aed","#fff"],["#0f9d58","#fff"]];
+const KEY="formation-board-v4";
+const $=id=>document.getElementById(id);
+let uid=1; const nid=()=>"p"+Date.now().toString(36)+(uid++);
+let state, saved=[], sel=-1, tab="core";
+
+// 포지션 그룹: 주 포지션 자리가 꽉 차면 같은 라인에 배치
+const GROUP={FB:"DF",W:"MF",GK:"GK",LB:"DF",CB:"DF",RB:"DF",LWB:"DF",RWB:"DF",CDM:"MF",CM:"MF",LM:"MF",RM:"MF",CAM:"MF",LAM:"MF",RAM:"MF",LW:"FW",RW:"FW",ST:"FW"};
+const POS_LIST=["GK","CB","FB","LB","RB","CDM","CM","CAM","W","LM","RM","ST"];
+const POS_NAME={FB:"윙백",W:"윙",CB:"센터백",CDM:"수미",CM:"미들",ST:"톱",GK:"키퍼"};
+// 팀 규칙(June): 톱=ST, 윙백=LB·RB, 미들=CM·LM·RM·CDM
+const FITS={FB:["LB","RB","LWB","RWB"],W:["LM","RM","LW","RW"],CM:["CM","LM","RM","CDM","LAM","RAM","CAM"],CDM:["CDM"],CAM:["CAM","LAM","RAM"],ST:["ST"]};
+const fits=(slotPos,code)=>!!code&&(slotPos===code||(FITS[code]||[]).includes(slotPos));
+const NQ=4;
+// 공개 버전: 기본 명단 없음. 첫 실행 때 '이름 직접 붙여넣기'로 등록
+function sample(){
+  const s={team:"우리 팀",kit:0,players:[],q:0,qs:[]};
+  for(let i=0;i<NQ;i++) s.qs.push({fm:"4-1-4-1",slots:fresh("4-1-4-1"),gk:null});
+  s.fm=s.qs[0].fm; s.slots=s.qs[0].slots; return s;
+}
+function fresh(fm,old){return F[fm].map(([pos,x,y],i)=>({pos,x,y,pid:old?.[i]?.pid??null}))}
+function P(id){return state.players.find(p=>p.id===id)}
+function attending(s=state){return s.players.filter(p=>p.here)}
+// 선수 목록을 순서대로 빈 자리에 넣기: ①주 포지션 ②같은 라인 ③남은 자리(골키퍼 자리는 마지막)
+function placeInto(slots,players){
+  const left=[...players];
+  const take=test=>{for(let k=0;k<left.length;k++){const p=left[k];const sl=slots.find(x=>!x.pid&&test(x,p));if(sl){sl.pid=p.id;left.splice(k,1);k--}}};
+  take((sl,p)=>sl.pos===p.pos1);
+  take((sl,p)=>fits(sl.pos,p.pos1));
+  take((sl,p)=>sl.pos===p.pos2);
+  take((sl,p)=>fits(sl.pos,p.pos2));
+  take((sl,p)=>p.pos1&&GROUP[sl.pos]===GROUP[p.pos1]);
+  take((sl,p)=>p.pos2&&GROUP[sl.pos]===GROUP[p.pos2]);
+  take((sl,p)=>sl.pos!=="GK"&&p.pos1!=="GK");
+  take((sl,p)=>sl.pos!=="GK");
+  take(()=>true);
+  improve(slots,players);
+  return left; // 자리가 없어 벤치로 가는 선수
+}
+// 포지션 적합도: 주 포지션 정확 > 주 포지션 계열 > 부 포지션 > 같은 라인
+function fitScore(p,pos){
+  if(!p) return 0;
+  if(pos==="GK") return p.pos1==="GK"?6:-6;
+  if(p.pos1===pos) return 6; if(fits(pos,p.pos1)) return 5;
+  if(p.pos2===pos) return 4; if(fits(pos,p.pos2)) return 3;
+  if(p.pos1&&GROUP[p.pos1]===GROUP[pos]) return 1; return 0;
+}
+// 이번에 넣은 선수끼리 자리를 맞바꿔 합계 점수가 오르면 교환(지정 GK 등 기존 자리는 건드리지 않음)
+function improve(slots,players){
+  const mine=new Map(players.map(p=>[p.id,p]));
+  const idx=slots.map((sl,i)=>i).filter(i=>slots[i].pid&&mine.has(slots[i].pid)&&slots[i].pos!=="GK");
+  for(let round=0,changed=true;changed&&round<20;round++){changed=false;
+    for(const i of idx)for(const j of idx){if(i>=j)continue;
+      const a=mine.get(slots[i].pid),b=mine.get(slots[j].pid);
+      if(fitScore(a,slots[j].pos)+fitScore(b,slots[i].pos)>fitScore(a,slots[i].pos)+fitScore(b,slots[j].pos)){
+        [slots[i].pid,slots[j].pid]=[slots[j].pid,slots[i].pid];changed=true}}}
+}
+function autoFill(s=state){
+  // 자리에 이미 있는 참석자는 유지, 빈 자리를 주축 먼저 → 용병 순으로 채움
+  const here=new Set(attending(s).map(p=>p.id));
+  s.slots.forEach(sl=>{if(sl.pid&&!here.has(sl.pid))sl.pid=null});
+  const gk=s.qs?.[s.q]?.gk, gs=s.slots.find(sl=>sl.pos==="GK");
+  if(gk&&here.has(gk)&&gs&&!s.slots.some(sl=>sl.pid===gk)){if(!gs.pid)gs.pid=gk}
+  const placed=new Set(s.slots.map(sl=>sl.pid).filter(Boolean));
+  const queue=attending(s).filter(p=>!placed.has(p.id)).sort((a,b)=>(a.type===b.type?0:a.type==="core"?-1:1));
+  placeInto(s.slots,queue);
+}
+// 4쿼터 자동 로테이션: 쿼터마다 지정 GK를 넣고, 출전이 적은 사람부터 필드 10명을 골라 포지션대로 배치
+function rotate(s=state){
+  if(s===state) syncQ();
+  const here=attending(s), played=new Map(here.map(p=>[p.id,0]));
+  s.qs.forEach(q=>{if(q.gk&&played.has(q.gk))played.set(q.gk,played.get(q.gk)+1)}); // GK 쿼터도 출전으로 셈
+  s.qs.forEach((q,qi)=>{
+    q.slots.forEach(sl=>sl.pid=null);
+    const gs=q.slots.find(sl=>sl.pos==="GK");
+    const gk=q.gk&&played.has(q.gk)?q.gk:null; if(gk&&gs) gs.pid=gk;
+    const n=q.slots.filter(sl=>!sl.pid).length;
+    // 출전 수가 적은 사람은 무조건, 같은 수끼리는 비어 있는 포지션에 맞는 사람을 우선
+    const cand=here.filter(p=>p.id!==gk).map((p,i)=>({p,i}))
+      .sort((a,b)=>played.get(a.p.id)-played.get(b.p.id)||((a.i+qi*4)%here.length)-((b.i+qi*4)%here.length)).map(x=>x.p);
+    let pick=cand;
+    if(cand.length>n){
+      const cut=played.get(cand[n-1].id);
+      const must=cand.filter(p=>played.get(p.id)<cut), tie=cand.filter(p=>played.get(p.id)===cut);
+      const sim=q.slots.map(sl=>({...sl})); placeInto(sim,must);
+      const chosen=[];
+      for(const test of [(sl,p)=>sl.pos===p.pos1,(sl,p)=>fits(sl.pos,p.pos1),(sl,p)=>fits(sl.pos,p.pos2)])
+        sim.forEach(sl=>{if(sl.pid||chosen.length>=n-must.length)return;
+          const p=tie.find(t=>!chosen.includes(t)&&test(sl,t)); if(p){sl.pid=p.id;chosen.push(p)}});
+      tie.forEach(t=>{if(chosen.length<n-must.length&&!chosen.includes(t))chosen.push(t)});
+      pick=[...must,...chosen];
+    }
+    placeInto(q.slots,pick);
+    pick.forEach(p=>played.set(p.id,played.get(p.id)+1));
+  });
+  balance(s);
+  if(s===state){state.fm=state.qs[state.q].fm;state.slots=state.qs[state.q].slots}
+}
+// 출전 수는 그대로 두고 포지션을 더 잘 맞추기: 쿼터 A에서 뛰는 f와 쉬는 b를, 쿼터 B에서는 반대로 바꿔본다
+function balance(s){
+  const pm=new Map(s.players.map(p=>[p.id,p]));
+  const score=q=>q.slots.reduce((t,sl)=>t+fitScore(pm.get(sl.pid),sl.pos),0);
+  const field=q=>q.slots.filter(sl=>sl.pid&&sl.pid!==q.gk).map(sl=>sl.pid);
+  const here=s.players.filter(p=>p.here).map(p=>p.id);
+  const fix=q=>improve(q.slots,field(q).map(id=>pm.get(id)));
+  for(let it=0,better=true;better&&it<30;it++){better=false;
+    for(const A of s.qs)for(const B of s.qs){if(A===B)continue;
+      const fa=field(A), fb=field(B);
+      for(const f of fa){ if(fb.includes(f)||B.gk===f) continue;          // f: A에서 뛰고 B에서 쉼
+        for(const b of fb){ if(fa.includes(b)||A.gk===b||!here.includes(b)) continue; // b: B에서 뛰고 A에서 쉼
+          const before=score(A)+score(B), snapA=A.slots.map(x=>x.pid), snapB=B.slots.map(x=>x.pid);
+          A.slots.find(x=>x.pid===f).pid=b; B.slots.find(x=>x.pid===b).pid=f; fix(A); fix(B);
+          if(score(A)+score(B)>before){better=true;break}
+          A.slots.forEach((x,i)=>x.pid=snapA[i]); B.slots.forEach((x,i)=>x.pid=snapB[i]);
+        } if(better)break; } if(better)break; } }
+}
+function migrate(st){
+  if(!st) return st;
+  if(!st.qs){ // 쿼터 이전 데이터: 현재 라인업을 4개 쿼터에 복사
+    st.q=0; st.qs=[]; for(let i=0;i<NQ;i++) st.qs.push({fm:st.fm,slots:JSON.parse(JSON.stringify(st.slots))});
+  }
+  st.players.forEach(p=>{ if(p.pos1===undefined){const f=F[st.qs[0].fm]; p.pos1=p.slot&&f[p.slot-1]?f[p.slot-1][0]:""} delete p.slot; });
+  st.fm=st.qs[st.q].fm; st.slots=st.qs[st.q].slots; return st;
+}
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(KEY)||"null"); if(d&&d.current){state=d.current; saved=d.saved||[]}}catch(e){}
+  if(!state){try{const o=JSON.parse(localStorage.getItem("formation-board-v2")||"null");
+    const fix=st=>{st.slots.push(st.slots.shift());st.players.forEach(p=>p.slot=p.slot||0);return st};
+    if(o&&o.current){state=fix(o.current);saved=(o.saved||[]).map(x=>({...x,data:fix(x.data)}))}}catch(e){}}
+  if(state){try{state=migrate(state);saved=saved.map(x=>({...x,data:migrate(x.data)}))}catch(e){state=null}}
+  if(!state) state=sample();
+  // 포지션 규칙 변경(11/2) 후 한 번 다시 짜기
+  if(!state.rules3){try{rotate()}catch(e){} state.rules3=true}
+}
+function syncQ(){Object.assign(state.qs[state.q],{fm:state.fm,slots:state.slots})}
+function switchQ(n){syncQ();state.q=n;state.fm=state.qs[n].fm;state.slots=state.qs[n].slots;sel=-1;renderAll()}
+function persist(){syncQ();try{localStorage.setItem(KEY,JSON.stringify({current:state,saved}))}catch(e){}}
+function clean(){ // 불참 처리된 선수는 모든 쿼터에서 빼기
+  syncQ(); state.qs.flatMap(q=>q.slots).forEach(sl=>{const p=sl.pid&&P(sl.pid); if(!p||!p.here) sl.pid=null});
+}
+
+function renderChips(){
+  $("chips").innerHTML="";
+  Object.keys(F).forEach(fm=>{const b=document.createElement("button");b.className="chip";b.textContent=fm+(fm==="4-1-4-1"?" ★":"");b.setAttribute("aria-pressed",fm===state.fm);
+    b.onclick=()=>{state.fm=fm;state.slots=fresh(fm,state.slots);sel=-1;renderAll()};$("chips").append(b)});
+  $("fmBadge").textContent=state.fm;
+}
+function renderKits(){
+  $("swatches").innerHTML="";
+  KITS.forEach(([c],i)=>{const b=document.createElement("button");b.className="sw";b.style.background=c;b.setAttribute("aria-label","유니폼 색 "+(i+1));b.setAttribute("aria-pressed",i===state.kit);
+    b.onclick=()=>{state.kit=i;renderAll()};$("swatches").append(b)});
+  const [kc,kf]=KITS[state.kit]; $("app").style.setProperty("--kit",kc); $("app").style.setProperty("--kit-fg",kf);
+}
+function renderPitch(){
+  const p=$("pitch"); p.querySelectorAll(".player").forEach(n=>n.remove());
+  state.slots.forEach((sl,i)=>{
+    const pl=sl.pid&&P(sl.pid);
+    const el=document.createElement("div");
+    el.className="player"+(sl.pos==="GK"&&pl?" gk":"")+(i===sel?" sel":"")+(!pl?" empty":"")+(pl&&pl.type==="guest"?" guest":"");
+    el.style.left=sl.x+"%"; el.style.top=sl.y+"%"; el.tabIndex=0; el.setAttribute("role","button");
+    el.setAttribute("aria-label",pl?`${i+1}번 자리 ${sl.pos} ${pl.name}`:`${i+1}번 자리 ${sl.pos} 비어 있음`);
+    el.innerHTML=`<div class="shirt">${pl?pl.num:"+"}</div><div class="pname"></div><div class="pos">${i+1} · ${sl.pos}</div>`;
+    el.querySelector(".pname").textContent=pl?pl.name:"빈 자리";
+    if(pl&&pl.type==="guest"){const t=document.createElement("span");t.className="gtag";t.textContent="용병";el.append(t)}
+    attachDrag(el,i); el.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();tapSlot(i)}};
+    p.append(el);
+  });
+}
+function attachDrag(el,i){
+  el.addEventListener("pointerdown",e=>{
+    e.preventDefault(); el.setPointerCapture(e.pointerId);
+    const r=$("pitch").getBoundingClientRect(), sx=e.clientX, sy=e.clientY; let moved=false;
+    const mv=ev=>{
+      if(!moved && Math.hypot(ev.clientX-sx,ev.clientY-sy)<5) return;
+      moved=true; el.classList.add("drag");
+      const sl=state.slots[i];
+      sl.x=Math.max(3,Math.min(97,(ev.clientX-r.left)/r.width*100));
+      sl.y=Math.max(3,Math.min(97,(ev.clientY-r.top)/r.height*100));
+      el.style.left=sl.x+"%"; el.style.top=sl.y+"%";
+    };
+    const up=()=>{el.removeEventListener("pointermove",mv);el.removeEventListener("pointerup",up);el.removeEventListener("pointercancel",up);
+      el.classList.remove("drag"); if(moved) persist(); else tapSlot(i)};
+    el.addEventListener("pointermove",mv); el.addEventListener("pointerup",up); el.addEventListener("pointercancel",up);
+  });
+}
+function tapSlot(i){
+  if(sel>=0&&sel!==i){ // 두 자리 맞바꾸기
+    const a=state.slots[sel],b=state.slots[i]; [a.pid,b.pid]=[b.pid,a.pid]; sel=-1; renderAll(); return;
+  }
+  sel=(sel===i)?-1:i; renderPitch(); renderBench();
+}
+function renderBench(){
+  const onPitch=new Set(state.slots.map(s=>s.pid).filter(Boolean));
+  const bench=attending().filter(p=>!onPitch.has(p.id));
+  const b=$("bench"); b.innerHTML=""; b.classList.toggle("armed",sel>=0);
+  $("benchCount").textContent=bench.length+"명";
+  const sl=sel>=0?state.slots[sel]:null;
+  $("slotStatus").innerHTML=sl
+    ? `<strong>${sel+1}번 ${sl.pos}</strong> 자리를 골랐어요. 벤치 선수를 누르면 교체, 다른 자리를 누르면 맞바꿔요.`
+    : (bench.length?"피치의 선수를 먼저 탭한 뒤 벤치 선수를 누르면 교체돼요.":"벤치에 남은 선수가 없어요.");
+  bench.forEach(p=>{const x=document.createElement("button");x.className="bp"+(p.type==="guest"?" guest":"");
+    x.innerHTML=`<b>${p.num}</b><span></span>`; x.querySelector("span").textContent=p.name+(p.type==="guest"?" (용병)":"");
+    {const q=playedQ(p.id);const i=document.createElement("i");i.textContent=`출전 ${q}Q`;x.append(i)}
+    x.onclick=()=>{if(sel<0){flash("먼저 피치에서 바꿀 자리를 탭하세요");return} state.slots[sel].pid=p.id; sel=-1; renderAll()};
+    b.append(x)});
+  if(sl&&sl.pid){const out=document.createElement("button");out.className="bp";out.innerHTML="<b>−</b><span>자리 비우기</span>";
+    out.onclick=()=>{state.slots[sel].pid=null;sel=-1;renderAll()};b.append(out)}
+}
+function rosterRow(p){
+  const li=document.createElement("li");
+  li.innerHTML=`<input type="checkbox" aria-label="참석"><input type="number" min="1" max="99" aria-label="등번호"><input type="text" aria-label="이름"><select aria-label="주 포지션"></select><select aria-label="부 포지션"></select><button class="gtoggle" aria-label="용병 여부"></button><button class="x" aria-label="삭제">✕</button>`;
+  const [cb,num,nm]=li.querySelectorAll("input");
+  cb.id="here-"+p.id; num.id="num-"+p.id; nm.id="name-"+p.id;
+  cb.checked=p.here; num.value=p.num; nm.value=p.name;
+  const [sp,sp2]=li.querySelectorAll("select"); sp.id="pos1-"+p.id; sp2.id="pos2-"+p.id;
+  const opts=POS_LIST.map(code=>`<option value="${code}">${POS_NAME[code]||code}</option>`).join("");
+  sp.innerHTML='<option value="">주</option>'+opts; sp2.innerHTML='<option value="">부 –</option>'+opts;
+  sp.title="주 포지션"; sp2.title="부 포지션";
+  sp.value=p.pos1||""; sp2.value=p.pos2||"";
+  sp.onchange=()=>{p.pos1=sp.value; persist()}; sp2.onchange=()=>{p.pos2=sp2.value; persist()};
+  cb.onchange=()=>{p.here=cb.checked; clean(); if(p.here) autoFill(); renderPitch(); renderBench(); renderSummary(); persist()};
+  num.oninput=()=>{p.num=Math.max(1,Math.min(99,+num.value||1)); renderPitch(); renderBench(); persist()};
+  nm.oninput=()=>{p.name=nm.value; renderPitch(); renderBench(); persist()};
+  const gt=li.querySelector(".gtoggle"); gt.setAttribute("aria-pressed",p.type==="guest"); gt.textContent=p.type==="guest"?"✓":"";
+  gt.onclick=()=>{p.type=p.type==="guest"?"core":"guest"; renderAll(); flash(`${p.name||"선수"}: ${p.type==="guest"?"용병으로":"주축으로"} 옮김`)};
+  li.querySelector(".x").onclick=()=>{state.players=state.players.filter(q=>q!==p); clean(); renderAll()};
+  return li;
+}
+function renderRoster(){
+  const cl=$("coreList"), gl=$("guestList"); cl.innerHTML=""; gl.innerHTML="";
+  const cs=state.players.filter(p=>p.type==="core"), gs=state.players.filter(p=>p.type==="guest");
+  cs.forEach(p=>cl.append(rosterRow(p))); gs.forEach(p=>gl.append(rosterRow(p)));
+  if(!gs.length) gl.innerHTML='<li><p class="empty">용병이 없어요. 아래에서 추가하거나 위 명단의 용병 칸을 누르세요.</p></li>';
+  $("coreCount").textContent=cs.length+"명"; $("guestCount").textContent=gs.length+"명";
+  renderSummary();
+}
+function renderSummary(){
+  const a=attending(), c=a.filter(p=>p.type==="core").length, g=a.length-c;
+  const empty=state.slots.filter(s=>!s.pid).length;
+  $("attendSummary").innerHTML=`참석 <strong>${a.length}명</strong> (주축 ${c} · 용병 ${g})`+(a.length<11?` · ${11-a.length}명 부족해요`:"")+(empty&&a.length>=11?` · 빈 자리 ${empty}개`:"");
+}
+function renderSaved(){
+  const ul=$("savedList"); ul.innerHTML="";
+  if(!saved.length){ul.innerHTML='<li style="border:0;padding:0"><p class="empty">아직 저장한 라인업이 없어요.</p></li>';return}
+  saved.forEach((s,i)=>{const li=document.createElement("li");
+    li.innerHTML=`<span class="nm"></span><span class="fm">${s.fm}</span><button class="load">불러오기</button><button class="del">삭제</button>`;
+    li.querySelector(".nm").textContent=s.title;
+    li.querySelector(".load").onclick=()=>{state=JSON.parse(JSON.stringify(s.data));sel=-1;renderAll();flash(`'${s.title}' 불러옴`)};
+    li.querySelector(".del").onclick=()=>{saved.splice(i,1);persist();renderSaved();flash("삭제함")};
+    ul.append(li)});
+}
+let tt; function flash(m){$("toast").textContent=m;clearTimeout(tt);tt=setTimeout(()=>$("toast").textContent="",2400)}
+function renderAll(){renderQ();renderChips();renderKits();renderPitch();renderBench();renderRoster();renderSaved();$("teamName").value=state.team;persist()}
+
+$("addCore").onclick=()=>{const used=new Set(state.players.map(p=>p.num));let n=1;while(used.has(n))n++;
+  const name=$("guestName").value.trim()||"새 멤버";
+  state.players.push({id:nid(),name,num:n,type:"core",here:true,pos1:"",pos2:""});$("guestName").value="";autoFill();renderAll();flash(`${name} 주축으로 추가됨`)};
+function addGuest(){const name=$("guestName").value.trim()||`용병 ${state.players.filter(p=>p.type==="guest").length+1}`;
+  const used=new Set(state.players.map(p=>p.num));let n=20;while(used.has(n))n++;
+  state.players.push({id:nid(),name,num:n,type:"guest",here:true,pos1:""});$("guestName").value="";autoFill();renderAll();flash(`${name} 추가됨`)}
+$("addGuest").onclick=addGuest;
+$("guestName").onkeydown=e=>{if(e.key==="Enter")addGuest()};
+$("autoBtn").onclick=()=>{state.slots.forEach(s=>s.pid=null);autoFill();sel=-1;renderAll();flash("참석자를 자리에 배치했어요 (주축 먼저)")};
+$("newWeek").onclick=()=>{$("weekConfirm").hidden=false};
+$("weekNo").onclick=()=>{$("weekConfirm").hidden=true};
+$("weekYes").onclick=()=>{state.players=state.players.filter(p=>p.type==="core");state.players.forEach(p=>p.here=false);
+  syncQ();state.qs.forEach(q=>q.slots.forEach(s=>s.pid=null));sel=-1;$("weekConfirm").hidden=true;renderAll();flash("새 주를 시작했어요. 참석자를 체크하세요")};
+$("teamName").oninput=e=>{state.team=e.target.value;persist()};
+$("saveBtn").onclick=()=>{const t=$("saveName").value.trim()||`${state.team||"팀"} ${state.fm}`;
+  saved.unshift({title:t,fm:state.fm,data:JSON.parse(JSON.stringify(state))});$("saveName").value="";persist();renderSaved();flash(`'${t}' 저장함`)};
+$("resetBtn").onclick=()=>{state.slots=fresh(state.fm,state.slots);sel=-1;renderAll();flash("기본 위치로 되돌림")};
+document.addEventListener("pointerdown",e=>{if(sel>=0&&!e.target.closest(".player,#bench")){sel=-1;renderPitch();renderBench()}});
+
+// ---- 카톡 캡처/텍스트로 참석자 불러오기 ----
+const norm=t=>(t||"").replace(/\(.*?\)|\[.*?\]/g,"").replace(/[^가-힣a-zA-Z0-9]/g,"").toLowerCase();
+let pending=[];
+// "홍길동(센터백,톱) 김철수(윙백,수미)" 같은 카톡 명단을 이름+포지션으로 나누기
+const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/센터백|센백|cb/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|스트라이커|공격수|st|fw/i,"ST"],[/윙|lm|rm|lw|rw/i,"W"]];
+function koPos(t){t=(t||"").trim();for(const [re,c] of KO_POS)if(re.test(t))return c;return ""}
+function splitNames(text){
+  const prot=String(text||"").replace(/\(([^)]*)\)/g,m=>m.replace(/[,，\/]/g,";"));
+  return prot.split(/[\n,，、·\/]+|(?<=\))\s+/).map(t=>t.trim()).filter(t=>t&&!/^[0-9]/.test(t));
+}
+function parseEntry(raw){
+  const m=String(raw).match(/^([^(（]+)[(（]([^)）]*)[)）]/);
+  if(!m) return {name:String(raw).trim(),pos:[]};
+  return {name:m[1].trim(),pos:m[2].split(/[;,]/).map(koPos).filter(Boolean)};
+}
+function matchNames(names){
+  const seen=new Set(), out=[], hasCore=state.players.some(p=>p.type==="core");
+  names.map(n=>String(n).trim()).filter(Boolean).forEach(entry=>{
+    const {name,pos}=parseEntry(entry), k=norm(name); if(!k||seen.has(k))return; seen.add(k);
+    const hit=state.players.find(p=>{const q=norm(p.name);return q&&(q===k||(q.length>=2&&k.includes(q))||(k.length>=2&&q.includes(k)))});
+    out.push({raw:name,pos,hit,action:hit?"match":(hasCore?"guest":"core")});
+  });
+  return out;
+}
+function showReview(list){
+  pending=list; $("review").hidden=!list.length;
+  if(!list.length){$("shotInfo").textContent="이름을 찾지 못했어요";return}
+  const ul=$("reviewList"); ul.innerHTML="";
+  list.forEach((r,i)=>{const li=document.createElement("li");
+    if(r.hit){li.innerHTML='<span class="rv-tag ok">명단</span><span class="nm grow"></span>';
+      li.querySelector(".nm").textContent=r.raw===r.hit.name?r.raw:`${r.raw} → ${r.hit.name}`;}
+    else{li.innerHTML='<span class="rv-tag new">새 이름</span><input type="text" aria-label="이름"><select class="rv" aria-label="추가 방법"><option value="guest">용병으로</option><option value="core">주축으로</option><option value="skip">빼기</option></select>';
+      const t=li.querySelector("input"),sel=li.querySelector("select"); t.id="rvn-"+i; sel.id="rva-"+i; t.value=r.raw; sel.value=r.action;
+      t.oninput=()=>r.raw=t.value; sel.onchange=()=>r.action=sel.value;}
+    ul.append(li)});
+  const m=list.filter(r=>r.hit).length;
+  $("reviewCount").textContent=`명단 ${m} · 새 이름 ${list.length-m}`;
+}
+$("applyImport").onclick=()=>{
+  if($("resetOthers").checked) state.players.forEach(p=>{if(p.type==="core")p.here=false});
+  // 이전 용병 중 이번 캡처에 없는 사람은 불참
+  state.players.forEach(p=>{if(p.type==="guest")p.here=false});
+  let added=0;
+  pending.forEach(r=>{
+    if(r.hit){r.hit.here=true; if(!r.hit.pos1&&r.pos?.length){r.hit.pos1=r.pos[0];r.hit.pos2=r.pos[1]||""} return}
+    if(r.action==="skip"||!r.raw.trim())return;
+    const used=new Set(state.players.map(p=>p.num));let n=r.action==="core"?1:20;while(used.has(n))n++;
+    state.players.push({id:nid(),name:r.raw.trim(),num:n,type:r.action,here:true,pos1:r.pos?.[0]||"",pos2:r.pos?.[1]||""});added++;
+  });
+  clean(); autoFill(); pending=[]; $("review").hidden=true; $("shotInfo").textContent=""; renderAll();
+  flash(`참석 ${attending().length}명 반영${added?`, 새로 ${added}명 추가`:""}`);
+};
+$("cancelImport").onclick=()=>{pending=[];$("review").hidden=true;$("shotInfo").textContent=""};
+$("pasteBtn").onclick=()=>showReview(matchNames(splitNames($("pasteText").value)));
+
+(async()=>{
+  let sample=null;
+  try{sample=await window.claude?.use?.("sample")}catch(e){}
+  const caps=sample?await sample.limits().catch(()=>null):null;
+  if(!sample||!caps?.images){$("shotRow").hidden=true;$("shotOff").hidden=false;$("pasteBox").open=true;return}
+  $("shotBtn").onclick=()=>$("shotFile").click();
+  $("shotFile").onchange=async()=>{
+    const files=[...$("shotFile").files].slice(0,caps.images.maxCount||4); if(!files.length)return;
+    $("shotBtn").disabled=true; $("shotInfo").innerHTML='<span class="spin"></span>캡처 읽는 중…';
+    const roster=state.players.filter(p=>p.type==="core").map(p=>p.name).join(", ");
+    const prompt=`첨부 이미지는 축구팀의 카카오톡 캡처입니다(투표 결과, 참석자 목록, 또는 채팅).
+이번 경기에 "참석"하는 사람의 이름만 뽑아 주세요.
+- 투표 화면이면 참석/가능/O 같은 선택지에 표시된 사람만, 불참/미정 쪽은 빼세요.
+- 채팅이면 참석 의사를 밝힌 사람을 넣으세요. 번호 매긴 명단(1. 김민수 …)이면 그대로 쓰세요.
+- 프로필 이름 뒤의 부가 정보(나이, 지역, 이모지 등)는 지우고 이름만 쓰세요.
+- 참고용 팀 주축 명단: ${roster||"없음"}. 이 명단과 같은 사람이면 명단의 표기로 맞춰 주세요.
+JSON만 답하세요: {"names":["이름1","이름2"]}`;
+    try{
+      const r=await sample.json(prompt,{images:files,cache:false});
+      const names=Array.isArray(r?.names)?r.names:[];
+      $("shotInfo").textContent=names.length?`${names.length}명 인식`:"";
+      showReview(matchNames(names));
+    }catch(e){
+      $("shotInfo").textContent={not_granted:"Claude 사용을 허용해야 캡처를 읽을 수 있어요",rate_limited:"요청이 많아요. 잠시 뒤 다시 올려주세요",image_rejected:"이미지 형식이나 개수를 확인해 주세요",cancelled:""}[e?.code]??"캡처를 읽지 못했어요. 이름을 직접 붙여넣어 주세요";
+    }finally{$("shotBtn").disabled=false;$("shotFile").value=""}
+  };
+})();
+
+// ---- 쿼터 ----
+function playedQ(id){syncQ();return state.qs.filter(q=>q.slots.some(sl=>sl.pid===id)).length}
+function renderQ(){
+  syncQ(); const bar=$("qbar"); bar.innerHTML="";
+  state.qs.forEach((q,i)=>{const b=document.createElement("button");b.className="qb";b.setAttribute("role","tab");b.setAttribute("aria-selected",i===state.q);
+    const n=q.slots.filter(sl=>sl.pid).length; b.innerHTML=`${i+1}Q<small>${n}/11</small>`;b.title=q.fm; b.onclick=()=>switchQ(i); bar.append(b)});
+  $("qTitle").textContent=`${state.q+1}쿼터 이름으로 배정`; $("copyPrev").hidden=state.q===0;
+  const qg=$("qGk"), cur=state.qs[state.q].gk||"";
+  qg.innerHTML='<option value="">지정 안 함</option>'+attending().map(p=>`<option value="${p.id}"></option>`).join("");
+  [...qg.options].slice(1).forEach((o,i)=>o.textContent=attending()[i].name+(attending()[i].type==="guest"?" (용병)":""));
+  qg.value=attending().some(p=>p.id===cur)?cur:"";
+}
+$("qAssign").onclick=()=>{
+  const raw=splitNames($("qNames").value);
+  if(!raw.length){$("qInfo").textContent="이름을 넣어주세요";return}
+  const list=[],added=[];
+  matchNames(raw).forEach(r=>{let p=r.hit;
+    if(!p){const used=new Set(state.players.map(x=>x.num));let n=20;while(used.has(n))n++;
+      p={id:nid(),name:r.raw,num:n,type:"guest",here:true,pos1:""};state.players.push(p);added.push(r.raw)}
+    p.here=true; if(!list.includes(p)) list.push(p)});
+  state.slots.forEach(sl=>sl.pid=null);
+  const gk=state.qs[state.q].gk, gs=state.slots.find(sl=>sl.pos==="GK");
+  if(gk&&gs&&list.some(p=>p.id===gk)){gs.pid=gk;list.splice(list.findIndex(p=>p.id===gk),1);list.unshift(P(gk))}
+  const bench=placeInto(state.slots,list.filter(p=>p.id!==gs?.pid));
+  sel=-1; renderAll();
+  $("qInfo").textContent=`${state.slots.filter(sl=>sl.pid).length}명 배치`+(bench.length?`, ${bench.length}명 벤치`:"")+(added.length?` · 새 용병: ${added.join(", ")}`:"");
+  $("qNames").value="";
+};
+$("qGk").onchange=e=>{
+  const id=e.target.value; state.qs[state.q].gk=id||null;
+  if(id){const gs=state.slots.find(sl=>sl.pos==="GK"), was=state.slots.find(sl=>sl.pid===id);
+    if(gs){ if(was&&was!==gs){was.pid=gs.pid} else if(!was&&gs.pid){} gs.pid=id; }}
+  renderAll();
+};
+$("rotateBtn").onclick=()=>{rotate();sel=-1;renderAll();
+  const c=attending().map(p=>playedQ(p.id)); $("qInfo").textContent=`4쿼터 배정 완료 · 1인당 ${Math.min(...c)}~${Math.max(...c)}쿼터`};
+$("copyPrev").onclick=()=>{syncQ();const prev=state.qs[state.q-1];state.fm=prev.fm;state.slots=JSON.parse(JSON.stringify(prev.slots));sel=-1;renderAll();flash(`${state.q}쿼터 라인업을 복사했어요`)};
+
+load(); renderAll();
+</script>
+
+<script>if("serviceWorker" in navigator) addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));</script>
+</body></html>
