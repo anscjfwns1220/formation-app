@@ -103,6 +103,13 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
 .sub h3{margin:0;font-size:13px;font-weight:700}
 .count{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
 .bench{display:flex;flex-wrap:wrap;gap:6px}
+.pgrp{border-top:1px solid var(--line);padding:8px 0}.pgrp:first-child{border-top:0;padding-top:2px}
+.pg-h{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}.pg-h b{font-size:15px}.pg-h span{font-size:12px;color:var(--muted)}
+.pg-l{display:flex;flex-wrap:wrap;gap:6px}
+.pchip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px}
+.pchip.guest{background:#fff7d1;color:#1a1a1a;border-color:#e0b800}
+.pchip i{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--muted)}.pchip.guest i{color:#6b5a00}
+.pchip em{font-style:normal;font-size:10px;font-weight:700;background:var(--fg);color:var(--bg);border-radius:4px;padding:1px 4px}
 .bp{font:inherit;font-size:13px;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:4px 10px 4px 4px;cursor:pointer}
 .bp b{font-family:var(--f-mono);font-weight:500;font-size:12px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--kit,var(--accent));color:var(--kit-fg,#fff)}
 .bp.guest b{background:#ffe066;color:#1a1a1a}
@@ -192,6 +199,10 @@ input:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline
       <div class="sub"><h3>벤치</h3><span class="count" id="benchCount"></span></div>
       <p class="status" id="slotStatus"></p>
       <div class="bench" id="bench"></div>
+    </section>
+    <section class="sec" style="margin-top:12px">
+      <div class="sub"><h3>출전 쿼터</h3><span class="count" id="playCount"></span></div>
+      <div id="playTable"></div>
     </section>
   </div>
 
@@ -572,7 +583,7 @@ function renderSaved(){
     ul.append(li)});
 }
 let tt; function flash(m){$("toast").textContent=m;clearTimeout(tt);tt=setTimeout(()=>$("toast").textContent="",2400)}
-function renderAll(){renderQ();renderChips();renderKits();renderPitch();renderBench();renderRoster();renderSaved();$("teamName").value=state.team;persist()}
+function renderAll(){renderPlay();renderQ();renderChips();renderKits();renderPitch();renderBench();renderRoster();renderSaved();$("teamName").value=state.team;persist()}
 
 $("addCore").onclick=()=>{const used=new Set(state.players.map(p=>p.num));let n=1;while(used.has(n))n++;
   const name=$("guestName").value.trim()||"새 멤버";
@@ -846,6 +857,23 @@ JSON만 답하세요: {"names":["이름1","이름2(포지션)"]}`;
 })();
 
 // ---- 쿼터 ----
+function renderPlay(){
+  syncQ(); const box=$("playTable"); if(!box) return; box.innerHTML="";
+  const rows=attending().map(p=>{const qs=[],gk=[];state.qs.forEach((q,i)=>{const sl=q.slots.find(x=>x.pid===p.id);if(sl){qs.push(i+1);if(sl.pos==="GK")gk.push(i+1)}});return {p,qs,gk}});
+  const total=state.qs.reduce((n,q)=>n+q.slots.filter(x=>x.pid).length,0);
+  $("playCount").textContent=rows.length?`참석 ${rows.length}명 · 배정 ${total}/44`:"";
+  if(!total){box.innerHTML='<p class="empty">자동 로테이션을 돌리면 사람별로 몇 쿼터 뛰는지 여기 나와요.</p>';return}
+  [4,3,2,1,0].forEach(n=>{const g=rows.filter(r=>r.qs.length===n); if(!g.length) return;
+    const d=document.createElement("div"); d.className="pgrp";
+    d.innerHTML=`<div class="pg-h"><b>${n?n+"쿼터":"출전 없음"}</b><span>${g.length}명</span></div><div class="pg-l"></div>`;
+    g.sort((a,b)=>(b.gk.length-a.gk.length)||a.p.name.localeCompare(b.p.name,"ko")).forEach(r=>{
+      const c=document.createElement("span"); c.className="pchip"+(r.p.type==="guest"?" guest":"");
+      const allGk=r.gk.length&&r.gk.length===r.qs.length, qs=r.qs.map(q=>!allGk&&r.gk.includes(q)?q+"(GK)":q).join("·");
+      c.textContent=r.p.name; if(qs){const i=document.createElement("i");i.textContent=qs+"Q";c.append(i)}
+      if(r.gk.length===r.qs.length&&r.gk.length){const k=document.createElement("em");k.textContent="GK";c.prepend(k)}
+      d.querySelector(".pg-l").append(c)});
+    box.append(d)});
+}
 function playedQ(id){syncQ();return state.qs.filter(q=>q.slots.some(sl=>sl.pid===id)).length}
 function renderQ(){
   syncQ(); const bar=$("qbar"); bar.innerHTML="";
@@ -880,7 +908,9 @@ $("qGk").onchange=e=>{
   renderAll();
 };
 $("rotateBtn").onclick=()=>{rotate();sel=-1;renderAll();
-  const c=attending().map(p=>playedQ(p.id)); $("qInfo").textContent=`4쿼터 배정 완료 · 1인당 ${Math.min(...c)}~${Math.max(...c)}쿼터`};
+  const c=attending().map(p=>playedQ(p.id)); const cnt=n=>c.filter(x=>x===n).length;
+  $("qInfo").textContent=`배정 완료 · `+[4,3,2,1].filter(n=>cnt(n)).map(n=>`${n}쿼터 ${cnt(n)}명`).join(", ");
+  $("playTable").scrollIntoView({behavior:"smooth",block:"nearest"})};
 $("copyPrev").onclick=()=>{syncQ();const prev=state.qs[state.q-1];state.fm=prev.fm;state.slots=JSON.parse(JSON.stringify(prev.slots));sel=-1;renderAll();flash(`${state.q}쿼터 라인업을 복사했어요`)};
 
 // ---- 팀원과 공유: 명단+라인업을 링크(#L=...)에 압축해서 담기. 서버 없이 카톡으로 전달 ----
