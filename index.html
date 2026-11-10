@@ -597,12 +597,14 @@ document.addEventListener("pointerdown",e=>{if(sel>=0&&!e.target.closest(".playe
 const norm=t=>(t||"").replace(/\(.*?\)|\[.*?\]/g,"").replace(/[^가-힣a-zA-Z0-9]/g,"").toLowerCase();
 let pending=[];
 // "홍길동(센터백,톱) 김철수(윙백,수미)" 같은 카톡 명단을 이름+포지션으로 나누기
-const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/센터백|센백|cb/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|스트라이커|공격수|st|fw/i,"ST"],[/윙|lm|rm|lw|rw|^w$/i,"W"]];
+const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/레프트백|왼쪽\s*윙백|^lwb$/i,"LB"],[/라이트백|오른쪽\s*윙백|^rwb$/i,"RB"],[/센터백|센백|중앙\s*수비|^수비$|cb|^df$/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|탑|스트라이커|공격수|^공격$|st|fw|cf/i,"ST"],[/윙|lm|rm|lw|rw|^w$/i,"W"]];
 function koPos(t){t=(t||"").trim();for(const [re,c] of KO_POS)if(re.test(t))return c;return ""}
 // 이름 바로 뒤 영문 포지션: "홍길동CB", "김철수ST,CDM", "이영희 FW"
 const ENTRY_RE=/^([가-힣]{2,4})\s*([A-Za-z]{1,3}(?:\s*;\s*[A-Za-z]{1,3})*)?$/;
+const POSKO="(?:골키퍼|키퍼|레프트백|라이트백|센터백|센백|사이드백|윙백|풀백|중앙수비|수비|수미|공미|미드필더|미들|미드|스트라이커|공격수|공격|윙어|톱|탑|윙)";
 function splitNames(text){
   const prot=String(text||"")
+    .replace(new RegExp("([가-힣]{2,4})\\s*[-:：]?\\s+("+POSKO+"(?:\\s*[,，\\/]\\s*"+POSKO+")*)(?![가-힣])","g"),(m,n,ps)=>n+"("+ps.replace(/\s*[,，\/]\s*/g,";")+")")
     .replace(/\(([^)]*)\)/g,m=>m.replace(/[,，\/]/g,";"))
     .replace(/([A-Za-z]{2,3})\s*[,，\/]\s*(?=[A-Za-z]{2,3}\b)/g,"$1;");
   const out=[];
@@ -649,18 +651,23 @@ function showReview(list){
 $("applyImport").onclick=()=>{
   if($("resetOthers").checked) state.players.forEach(p=>{if(p.type==="core")p.here=false});
   // 이전 용병 중 이번 캡처에 없는 사람은 불참
-  state.players.forEach(p=>{if(p.type==="guest")p.here=false});
-  let added=0;
+  const keep=new Set(); let added=0;
   pending.forEach(r=>{
-    if(r.hit){r.hit.here=true; if(!r.hit.pos1&&r.pos?.length){r.hit.pos1=r.pos[0];r.hit.pos2=r.pos[1]||""}
-      if(r.q||r.note){setAvail(r.hit,r.q); if(r.note) r.hit.note=r.note} return}
+    if(r.hit){r.hit.here=true; keep.add(r.hit.id);
+      if(r.pos?.length){const old=r.hit.pos1; r.hit.pos1=r.pos[0]; r.hit.pos2=r.pos[1]||(old&&old!==r.pos[0]?old:r.hit.pos2||"")}
+      setAvail(r.hit,r.q||null); r.hit.note=r.note||""; return}
     if(r.action==="skip"||!r.raw.trim())return;
     const used=new Set(state.players.map(p=>p.num));let n=r.action==="core"?1:20;while(used.has(n))n++;
     const np={id:nid(),name:r.raw.trim(),num:n,type:r.action,here:true,pos1:r.pos?.[0]||"",pos2:r.pos?.[1]||"",note:r.note||""};
-    if(r.q) setAvail(np,r.q); state.players.push(np); added++;
+    np.fresh=true; if(r.q) setAvail(np,r.q); state.players.push(np); added++;
   });
+  // 매주 캡처 기준: 이번 캡처에 없는 지난 용병은 명단에서 지움 (주축은 항상 유지)
+  const before=state.players.length;
+  state.players=state.players.filter(p=>p.type!=="guest"||keep.has(p.id)||p.fresh); state.players.forEach(p=>delete p.fresh);
+  const removed=before-state.players.length;
+  state.qs.forEach(q=>{if(q.gk&&!P(q.gk)) q.gk=null});
   clean(); autoFill(); rotateIfNeeded(); pending=[]; $("review").hidden=true; $("shotInfo").textContent=""; renderAll();
-  flash(`참석 ${attending().length}명 반영${added?`, 새로 ${added}명 추가`:""}`);
+  flash(`참석 ${attending().length}명 반영${added?`, 새로 ${added}명 추가`:""}${removed?`, 지난 용병 ${removed}명 정리`:""}`);
 };
 $("cancelImport").onclick=()=>{pending=[];$("review").hidden=true;$("shotInfo").textContent=""};
 $("pasteBtn").onclick=()=>{const t=$("pasteText").value, tagged=[...t.matchAll(/([가-힣]{2,4})\s*\/\s*\d{2}/g)].map(m=>m[1]);
@@ -768,7 +775,8 @@ function namesFromOcr(text){
   }
   const sec=attendSections(text); text=sec.text;
   // "이름/나이/역할" 형식(카톡 프로필 이름)이면 앞의 이름만 쓴다
-  const tagged=[...text.matchAll(/([가-힣]{2,4})\s*\/\s*\d{2}/g)].map(m=>m[1]);
+  const tagged=[...text.matchAll(new RegExp("([가-힣]{2,4})\\s*\\/\\s*\\d{2}(?:\\s*[\\/ ]\\s*((?:"+POSKO+"|[A-Za-z]{2,3})(?:\\s*[,;]\\s*(?:"+POSKO+"|[A-Za-z]{2,3}))*)(?![가-힣A-Za-z]))?","g"))]
+    .map(m=>{const ps=(m[2]||"").split(/\s*[,;]\s*/).map(koPos).filter(Boolean);return ps.length?`${m[1]}(${ps.join(";")})`:m[1]});
   if(tagged.length>=2||(sec.sections&&tagged.length)) return tagged;
   const out=[];
   splitNames(text).forEach(tok=>{

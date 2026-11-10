@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 앱 파일을 캐시 (버전 올리면 새로 받음)
-const V="formation-v10", FILES=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","icon-180.png"];
+const V="formation-v11", FILES=["./","index.html","manifest.webmanifest","icon-192.png","icon-512.png","icon-180.png"];
 self.addEventListener("install",e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(FILES)));self.skipWaiting()});
 self.addEventListener("activate",e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==V).map(k=>caches.delete(k)))));self.clients.claim()});
 self.addEventListener("fetch",e=>{if(e.request.method!=="GET")return;
