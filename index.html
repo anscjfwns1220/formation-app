@@ -295,10 +295,15 @@ let state, saved=[], sel=-1, tab="core";
 
 // 포지션 그룹: 주 포지션 자리가 꽉 차면 같은 라인에 배치
 const GROUP={FB:"DF",W:"MF",GK:"GK",LB:"DF",CB:"DF",RB:"DF",LWB:"DF",RWB:"DF",CDM:"MF",CM:"MF",LM:"MF",RM:"MF",CAM:"MF",LAM:"MF",RAM:"MF",LW:"FW",RW:"FW",ST:"FW"};
-const POS_LIST=["GK","CB","FB","LB","RB","CDM","CM","CAM","W","LM","RM","ST"];
-const POS_NAME={FB:"윙백",W:"윙",CB:"센터백",CDM:"수미",CM:"미들",ST:"톱",GK:"키퍼"};
-// 팀 규칙(June): 톱=ST, 윙백=LB·RB, 미들=CM·LM·RM·CDM
-const FITS={FB:["LB","RB","LWB","RWB"],W:["LM","RM","LW","RW"],CM:["CM","LM","RM","CDM","LAM","RAM","CAM"],CDM:["CDM"],CAM:["CAM","LAM","RAM"],ST:["ST"]};
+const POS_LIST=["GK","LB","CB","RB","FB","CDM","CM","CAM","LM","RM","W","ST"];
+// 목록에는 코드로 보여 주고, 펼치면 뜻도 같이 (June: RB=오른쪽 수비, CM=미드필더, LM·LW=왼쪽 윙, RM·RW=오른쪽 윙, CDM=수비형 미드, ST=톱)
+const POS_NAME={FB:"윙백",W:"윙"};
+const POS_DESC={GK:"골키퍼",LB:"왼쪽 수비",CB:"센터백",RB:"오른쪽 수비",FB:"윙백(좌우)",CDM:"수비형 미드",CM:"미드필더",CAM:"공격형 미드",LM:"왼쪽 윙",RM:"오른쪽 윙",W:"윙(좌우)",ST:"톱"};
+// 팀 규칙(June 11/10): CM은 가운데 미드필더만, 윙(LM/RM)은 좌우 그대로. 윙백·윙은 좌우 어느 쪽이든
+const FITS={FB:["LB","RB","LWB","RWB"],W:["LM","RM","LW","RW"],CM:["CM","CAM"],CDM:["CDM"],CAM:["CAM","LAM","RAM"],ST:["ST"]};
+// 제자리가 없을 때 차선: 옆 자리(RB↔LB, CDM↔CM, LM↔RM …)
+const NEAR={LB:["RB","CB"],RB:["LB","CB"],CB:["LB","RB","CDM"],FB:["CB"],CDM:["CM","CB"],CM:["CDM","CAM","LM","RM"],CAM:["CM","ST"],LM:["RM","CM"],RM:["LM","CM"],W:["CM","ST"],ST:["LM","RM","CAM"]};
+const near=(slotPos,code)=>!!code&&(NEAR[code]||[]).includes(slotPos);
 const fits=(slotPos,code)=>!!code&&(slotPos===code||(FITS[code]||[]).includes(slotPos));
 const NQ=4;
 // 공개 버전: 기본 명단 없음. 첫 실행 때 '이름 직접 붙여넣기'로 등록
@@ -318,6 +323,8 @@ function placeInto(slots,players){
   take((sl,p)=>fits(sl.pos,p.pos1));
   take((sl,p)=>sl.pos===p.pos2);
   take((sl,p)=>fits(sl.pos,p.pos2));
+  take((sl,p)=>near(sl.pos,p.pos1));
+  take((sl,p)=>near(sl.pos,p.pos2));
   take((sl,p)=>p.pos1&&GROUP[sl.pos]===GROUP[p.pos1]);
   take((sl,p)=>p.pos2&&GROUP[sl.pos]===GROUP[p.pos2]);
   take((sl,p)=>sl.pos!=="GK"&&p.pos1!=="GK");
@@ -332,6 +339,7 @@ function fitScore(p,pos){
   if(pos==="GK") return p.pos1==="GK"?6:-6;
   if(p.pos1===pos) return 6; if(fits(pos,p.pos1)) return 5;
   if(p.pos2===pos) return 4; if(fits(pos,p.pos2)) return 3;
+  if(near(pos,p.pos1)) return 2; if(near(pos,p.pos2)) return 1.5;
   if(p.pos1&&GROUP[p.pos1]===GROUP[pos]) return 1; return 0;
 }
 // 이번에 넣은 선수끼리 자리를 맞바꿔 합계 점수가 오르면 교환(지정 GK 등 기존 자리는 건드리지 않음)
@@ -403,22 +411,38 @@ function rotate(s=state){
 }
 // 출전 수는 그대로 두고 포지션을 더 잘 맞추기: 쿼터 A에서 뛰는 f와 쉬는 b를, 쿼터 B에서는 반대로 바꿔본다
 function balance(s){
+  // 출전 수는 그대로 두고, 쿼터끼리 "뛰는 사람↔쉬는 사람"을 바꿔 보며 포지션이 가장 잘 맞는 조합을 찾는다.
+  // 점수가 같은 교환도 받아들여 막힌 곳을 빠져나가고, 가장 좋았던 배치를 남긴다.
   const pm=new Map(s.players.map(p=>[p.id,p]));
-  const score=q=>q.slots.reduce((t,sl)=>t+fitScore(pm.get(sl.pid),sl.pos),0);
+  // 전혀 다른 라인에 들어가는 자리는 크게 감점해서, 같은 포지션끼리 한 쿼터에 몰려 쉬지 않게 한다
+  const fit=(p,pos)=>{const v=fitScore(p,pos);return v>=2?v:v-4};
+  const score=q=>q.slots.reduce((t,sl)=>t+(sl.pid?fit(pm.get(sl.pid),sl.pos):0),0);
   const field=q=>q.slots.filter(sl=>sl.pid&&sl.pid!==q.gk).map(sl=>sl.pid);
-  const here=s.players.filter(p=>p.here).map(p=>p.id);
-  const fix=q=>improve(q.slots,field(q).map(id=>pm.get(id)));
-  for(let it=0,better=true;better&&it<30;it++){better=false;
-    for(const A of s.qs)for(const B of s.qs){if(A===B)continue;
-      const fa=field(A), fb=field(B);
-      for(const f of fa){ if(fb.includes(f)||B.gk===f) continue;          // f: A에서 뛰고 B에서 쉼
-        if(!canQ(pm.get(f),s.qs.indexOf(B))) continue;
-        for(const b of fb){ if(fa.includes(b)||A.gk===b||!here.includes(b)||!canQ(pm.get(b),s.qs.indexOf(A))) continue; // b: B에서 뛰고 A에서 쉼
-          const before=score(A)+score(B), snapA=A.slots.map(x=>x.pid), snapB=B.slots.map(x=>x.pid);
-          A.slots.find(x=>x.pid===f).pid=b; B.slots.find(x=>x.pid===b).pid=f; fix(A); fix(B);
-          if(score(A)+score(B)>before){better=true;break}
-          A.slots.forEach((x,i)=>x.pid=snapA[i]); B.slots.forEach((x,i)=>x.pid=snapB[i]);
-        } if(better)break; } if(better)break; } }
+  const here=new Set(s.players.filter(p=>p.here).map(p=>p.id));
+  const relayout=q=>{const ids=field(q);q.slots.forEach(sl=>{if(sl.pid&&sl.pid!==q.gk)sl.pid=null});placeInto(q.slots,ids.map(id=>pm.get(id)))};
+  s.qs.forEach(relayout);
+  const total=()=>s.qs.reduce((t,q)=>t+score(q),0);
+  const snap=()=>s.qs.map(q=>q.slots.map(x=>x.pid));
+  const restore=v=>s.qs.forEach((q,i)=>q.slots.forEach((x,k)=>x.pid=v[i][k]));
+  let cur=total(), best=cur, bestSnap=snap(), seed=7;
+  const rnd=n=>{seed^=seed<<13;seed^=seed>>>17;seed^=seed<<5;return (seed>>>0)%n};
+  // 무작위로 흔든 뒤 다시 다듬기를 여러 번 반복해서 가장 좋은 배치를 고른다
+  const trySwap=(force)=>{
+    const ai=rnd(s.qs.length), bi=rnd(s.qs.length); if(ai===bi) return;
+    const A=s.qs[ai],B=s.qs[bi],fa=field(A),fb=field(B);
+    const F=fa.filter(f=>!fb.includes(f)&&B.gk!==f&&canQ(pm.get(f),bi)), Bs=fb.filter(b=>!fa.includes(b)&&A.gk!==b&&here.has(b)&&canQ(pm.get(b),ai));
+    if(!F.length||!Bs.length) return;
+    const f=F[rnd(F.length)], b=Bs[rnd(Bs.length)], sa=A.slots.map(x=>x.pid), sb=B.slots.map(x=>x.pid), old=score(A)+score(B);
+    A.slots.find(x=>x.pid===f).pid=b; B.slots.find(x=>x.pid===b).pid=f; relayout(A); relayout(B);
+    const nw=score(A)+score(B);
+    if(force||nw>=old){cur+=nw-old; if(cur>best){best=cur;bestSnap=snap()}}
+    else{A.slots.forEach((x,k)=>x.pid=sa[k]);B.slots.forEach((x,k)=>x.pid=sb[k])}
+  };
+  for(let r=0;r<16;r++){
+    if(r){restore(bestSnap);cur=best;for(let k=0;k<6;k++)trySwap(true)}
+    for(let it=0;it<500;it++)trySwap(false);
+  }
+  restore(bestSnap);
 }
 function migrate(st){
   if(!st) return st;
@@ -525,7 +549,7 @@ function rosterRow(p){
   cb.id="here-"+p.id; num.id="num-"+p.id; nm.id="name-"+p.id;
   cb.checked=p.here; num.value=p.num; nm.value=p.name;
   const [sp,sp2]=li.querySelectorAll("select"); sp.id="pos1-"+p.id; sp2.id="pos2-"+p.id;
-  const opts=POS_LIST.map(code=>`<option value="${code}">${POS_NAME[code]||code}</option>`).join("");
+  const opts=POS_LIST.map(code=>`<option value="${code}" title="${POS_DESC[code]}">${POS_NAME[code]||code}</option>`).join("");
   sp.innerHTML='<option value="">주</option>'+opts; sp2.innerHTML='<option value="">부 –</option>'+opts;
   sp.title="주 포지션"; sp2.title="부 포지션";
   sp.value=p.pos1||""; sp2.value=p.pos2||"";
@@ -608,11 +632,16 @@ document.addEventListener("pointerdown",e=>{if(sel>=0&&!e.target.closest(".playe
 const norm=t=>(t||"").replace(/\(.*?\)|\[.*?\]/g,"").replace(/[^가-힣a-zA-Z0-9]/g,"").toLowerCase();
 let pending=[];
 // "홍길동(센터백,톱) 김철수(윙백,수미)" 같은 카톡 명단을 이름+포지션으로 나누기
-const KO_POS=[[/골키퍼|키퍼|gk/i,"GK"],[/레프트백|왼쪽\s*윙백|^lwb$/i,"LB"],[/라이트백|오른쪽\s*윙백|^rwb$/i,"RB"],[/센터백|센백|중앙\s*수비|^수비$|cb|^df$/i,"CB"],[/사이드백|윙백|풀백|fb/i,"FB"],[/^lb$/i,"LB"],[/^rb$/i,"RB"],[/수미|cdm|dm/i,"CDM"],[/공미|cam/i,"CAM"],[/미들|미드|cm/i,"CM"],[/톱|탑|스트라이커|공격수|^공격$|st|fw|cf/i,"ST"],[/윙|lm|rm|lw|rw|^w$/i,"W"]];
+const KO_POS=[[/골키퍼|키퍼|\bgk\b/i,"GK"],
+  [/레프트백|왼쪽\s*(?:수비|윙백|풀백|백)|\b(?:lb|lwb)\b/i,"LB"],[/라이트백|오른쪽\s*(?:수비|윙백|풀백|백)|\b(?:rb|rwb)\b/i,"RB"],
+  [/왼쪽\s*(?:윙|미드|미들|날개)|레프트윙|\b(?:lw|lm)\b/i,"LM"],[/오른쪽\s*(?:윙|미드|미들|날개)|라이트윙|\b(?:rw|rm)\b/i,"RM"],
+  [/수비형\s*미드|수미|\b(?:cdm|dm)\b/i,"CDM"],[/공격형\s*미드|공미|\b(?:cam|am)\b/i,"CAM"],
+  [/센터백|센백|중앙\s*수비|^수비$|\b(?:cb|df)\b/i,"CB"],[/사이드백|윙백|풀백|\bfb\b/i,"FB"],
+  [/미드필더|미들|미드|\b(?:cm|mf)\b/i,"CM"],[/톱|탑|스트라이커|공격수|^공격$|\b(?:st|fw|cf)\b/i,"ST"],[/윙어|윙|날개|^w$/i,"W"]];
 function koPos(t){t=(t||"").trim();for(const [re,c] of KO_POS)if(re.test(t))return c;return ""}
 // 이름 바로 뒤 영문 포지션: "홍길동CB", "김철수ST,CDM", "이영희 FW"
 const ENTRY_RE=/^([가-힣]{2,4})\s*([A-Za-z]{1,3}(?:\s*;\s*[A-Za-z]{1,3})*)?$/;
-const POSKO="(?:골키퍼|키퍼|레프트백|라이트백|센터백|센백|사이드백|윙백|풀백|중앙수비|수비|수미|공미|미드필더|미들|미드|스트라이커|공격수|공격|윙어|톱|탑|윙)";
+const POSKO="(?:(?:왼쪽|오른쪽)\\s*(?:윙백|윙|수비|풀백|미드|미들|날개)|(?:수비형|공격형)\\s*미드필더|(?:수비형|공격형)\\s*미드|레프트윙|라이트윙|골키퍼|키퍼|레프트백|라이트백|센터백|센백|사이드백|윙백|풀백|중앙수비|수비|수미|공미|미드필더|미들|미드|스트라이커|공격수|공격|윙어|톱|탑|윙)";
 function splitNames(text){
   const prot=String(text||"")
     .replace(new RegExp("([가-힣]{2,4})\\s*[-:：]?\\s+("+POSKO+"(?:\\s*[,，\\/]\\s*"+POSKO+")*)(?![가-힣])","g"),(m,n,ps)=>n+"("+ps.replace(/\s*[,，\/]\s*/g,";")+")")
@@ -621,8 +650,10 @@ function splitNames(text){
   const out=[];
   prot.split(/[\n,，、·\/]+|(?<=\))\s+/).map(t=>t.trim()).filter(t=>t&&!/^[0-9]/.test(t)).forEach(t=>{
     // 한 줄에 "이름포지션 이름포지션"이 공백으로 이어져 있으면 나누기
-    const parts=t.replace(/([가-힣]{2,4})\s+([A-Za-z]{2,3})\b/g,"$1$2").split(/\s+/);
-    if(!/[(（]/.test(t)&&parts.length>1&&parts.every(p=>ENTRY_RE.test(p))) out.push(...parts); else out.push(t);
+    // "갑갑RB 을을CM 병병(톱)"처럼 괄호가 섞여 있어도 이름 단위로 나누기
+    const j=t.replace(/([가-힣]{2,4})\s+([A-Za-z]{2,3})\b/g,"$1$2");
+    const parts=j.match(/[가-힣]{2,4}(?:\s*[(（][^)）]*[)）]|[A-Za-z]{1,3}(?:\s*;\s*[A-Za-z]{1,3})*)?/g)||[];
+    if(parts.length>1&&!j.replace(/[가-힣]{2,4}(?:\s*[(（][^)）]*[)）]|[A-Za-z]{1,3}(?:\s*;\s*[A-Za-z]{1,3})*)?/g,"").trim()) out.push(...parts.map(x=>x.trim())); else out.push(t);
   });
   return out;
 }
